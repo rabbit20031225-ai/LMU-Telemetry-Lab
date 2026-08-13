@@ -19,7 +19,8 @@ import session3 from './assets/select_session_3.png';
 import session4 from './assets/select_session_4.png';
 import recording1 from './assets/recording_1.png';
 import recording2 from './assets/recording_2.png';
-import exportImg from './assets/export_lap_and_setup_files.png';
+import exportImg1 from './assets/export_lap_and_setup_files_1.png';
+import exportImg2 from './assets/export_lap_and_setup_files_2.png';
 
 const translations = {
   en: {
@@ -608,8 +609,9 @@ export const App: React.FC = () => {
                  {t.joinDiscordBtn}
                </motion.a>
             </div>
-            <div className="showcase-visual">
-               <img src={exportImg} className="showcase-img" alt="Export Lap and Setup Files" />
+            <div className="showcase-visual split-row">
+               <img src={exportImg1} className="showcase-img half" alt="Export Lap and Setup Files 1" />
+               <img src={exportImg2} className="showcase-img half" alt="Export Lap and Setup Files 2" />
             </div>
           </motion.div>
 
