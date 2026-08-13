@@ -56,6 +56,16 @@ export const apiClient = {
         if (!res.ok) throw new Error('Failed to delete profile');
     },
 
+    async reorderProfiles(profileIds: string[]): Promise<{ profiles: Profile[] }> {
+        const res = await fetch(`${API_BASE}/profiles/reorder`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ profile_ids: profileIds }),
+        });
+        if (!res.ok) throw new Error('Failed to reorder profiles');
+        return res.json();
+    },
+
     async updateProfile(profileId: string, name: string): Promise<void> {
         const res = await fetch(`${API_BASE}/profiles/${profileId}`, {
             method: 'PUT',

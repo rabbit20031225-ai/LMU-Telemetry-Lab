@@ -125,6 +125,26 @@ class ProfilesService:
         return False
 
     @classmethod
+    def reorder_profiles(cls, profile_ids: List[str]) -> List[Dict]:
+        profiles = cls.list_profiles()
+        profile_map = {p['id']: p for p in profiles}
+        
+        reordered = []
+        for idx, p_id in enumerate(profile_ids):
+            if p_id in profile_map:
+                p = profile_map.pop(p_id)
+                p['is_default'] = (idx == 0)
+                reordered.append(p)
+                
+        for p in profile_map.values():
+            p['is_default'] = (len(reordered) == 0)
+            reordered.append(p)
+            
+        cls._save_profiles(reordered)
+        logger.info(f"Reordered profiles. Top profile (default): {reordered[0]['name'] if reordered else 'None'}")
+        return cls.list_profiles()
+
+    @classmethod
     def _save_profiles(cls, profiles: List[Dict]):
         # Keep only the storage fields (don't save calculated session_count)
         storage_profiles = []

@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { X, Gauge, Thermometer, Eye, EyeOff, Layout, GripVertical, RotateCcw, Move3d, Save, Compass, Activity, Settings as SettingsIcon, ArrowUpDown, Route } from 'lucide-react';
-import { useTelemetryStore, CATEGORY_CHART_CONFIGS, getCategoryTemplateConfigs } from '../store/telemetryStore';
+import { X, Gauge, Thermometer, Eye, EyeOff, Layout, GripVertical, RotateCcw, Move3d, Save, Compass, Activity, Settings as SettingsIcon, ArrowUpDown, Route, CheckSquare, Check, ChevronDown, Search, Filter } from 'lucide-react';
+import { useTelemetryStore, CATEGORY_CHART_CONFIGS, getCategoryTemplateConfigs, getAllMasterChartConfigs } from '../store/telemetryStore';
 import { handleGlassMouseMove } from '../utils/glassEffect';
 import { Tooltip } from './ui/Tooltip';
 import packageJson from '../../package.json';
@@ -111,6 +111,8 @@ export const SettingsOverlay: React.FC = () => {
     const setMapMarkerType = useTelemetryStore(state => state.setMapMarkerType);
     const setActiveChartCategory = useTelemetryStore(state => state.setActiveChartCategory);
     const activeChartCategory = useTelemetryStore(state => state.activeChartCategory);
+    const chartLayoutMode = useTelemetryStore(state => state.chartLayoutMode);
+    const setChartLayoutMode = useTelemetryStore(state => state.setChartLayoutMode);
     const telemetryData = useTelemetryStore(state => state.telemetryData);
 
     // View Modes for dynamic templates
@@ -142,9 +144,26 @@ export const SettingsOverlay: React.FC = () => {
     const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
     const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
     const [dropPosition, setDropPosition] = useState<'top' | 'bottom' | null>(null);
+    const [isSelectorOpen, setIsSelectorOpen] = useState(false);
+    const [chartSearchQuery, setChartSearchQuery] = useState('');
+    const [activeCategoryFilter, setActiveCategoryFilter] = useState<'ALL' | 'Driver' | 'Tyres' | 'Dynamics' | 'Handling' | 'Systems'>('ALL');
 
-    // Filter and Sort charts based on CATEGORY_CHART_CONFIGS (Master List)
+    // Filter and Sort charts based on CATEGORY_CHART_CONFIGS or Master List
     const displayCharts = useMemo(() => {
+        if (chartLayoutMode === 'custom') {
+            const master = getAllMasterChartConfigs(useTelemetryStore.getState());
+            const custom = JSON.parse(localStorage.getItem('custom_chart_settings') || '{}');
+            return master.map((c, i) => {
+                const key = `${c.id}-${c.wheelIndex ?? 'all'}`;
+                return {
+                    ...c,
+                    ...custom[key],
+                    order: custom[key]?.order !== undefined ? custom[key].order : c.order ?? i,
+                    visible: custom[key]?.visible !== undefined ? custom[key].visible : c.visible
+                };
+            }).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+        }
+
         const templateConfigs = getCategoryTemplateConfigs(activeSettingsCategory as any, {
             tyresPressureViewMode,
             suspensionViewMode,
@@ -154,20 +173,19 @@ export const SettingsOverlay: React.FC = () => {
             handlingViewMode,
             pedalsViewMode
         });
-        const custom = JSON.parse(localStorage.getItem('custom_chart_settings') || '{}');
+        const preset = JSON.parse(localStorage.getItem('preset_chart_settings') || '{}');
 
-        return templateConfigs.map(c => {
+        return templateConfigs.map((c, i) => {
             const key = `${c.id}-${c.wheelIndex ?? 'all'}`;
-            const activeMatch = chartConfigs.find(ac => ac.id === c.id && ac.wheelIndex === c.wheelIndex);
             return {
                 ...c,
-                ...custom[key],
-                order: activeMatch ? activeMatch.order : c.order,
-                visible: custom[key]?.visible !== undefined ? custom[key].visible : (activeMatch ? activeMatch.visible : c.visible)
+                ...preset[key],
+                order: preset[key]?.order !== undefined ? preset[key].order : c.order ?? i,
+                visible: preset[key]?.visible !== undefined ? preset[key].visible : c.visible
             };
         }).sort((a, b) => a.order - b.order);
     }, [
-        activeSettingsCategory, chartConfigs,
+        chartLayoutMode, activeSettingsCategory, chartConfigs,
         tyresPressureViewMode, suspensionViewMode, thirdDeflectionViewMode,
         rideHeightViewMode, slipRatioViewMode, handlingViewMode, pedalsViewMode
     ]);
@@ -193,18 +211,29 @@ export const SettingsOverlay: React.FC = () => {
         e.preventDefault();
         if (draggedIndex === null) return;
 
-        const reordered = [...displayCharts];
-        const [removed] = reordered.splice(draggedIndex, 1);
+        const visibleList = displayCharts.filter(c => c.visible);
+        const [removed] = visibleList.splice(draggedIndex, 1);
 
         let insertAt = toIdx;
         if (dropPosition === 'bottom' && draggedIndex > toIdx) insertAt = toIdx + 1;
         if (dropPosition === 'top' && draggedIndex < toIdx) insertAt = toIdx - 1;
         if (insertAt < 0) insertAt = 0;
 
-        reordered.splice(insertAt, 0, removed);
+        visibleList.splice(insertAt, 0, removed);
 
-        const newConfigs = reordered.map((c, i) => ({ ...c, order: i }));
-        setChartConfigs(newConfigs);
+        const storageKey = chartLayoutMode === 'custom' ? 'custom_chart_settings' : 'preset_chart_settings';
+        const saved = JSON.parse(localStorage.getItem(storageKey) || '{}');
+        visibleList.forEach((c, i) => {
+            const key = `${c.id}-${c.wheelIndex ?? 'all'}`;
+            saved[key] = { ...saved[key], order: i };
+        });
+        localStorage.setItem(storageKey, JSON.stringify(saved));
+
+        if (chartLayoutMode === 'custom') {
+            useTelemetryStore.getState().refreshCustomChartConfigs();
+        } else {
+            useTelemetryStore.getState().setActiveChartCategory(activeSettingsCategory as any);
+        }
 
         handleDragEnd();
     };
@@ -235,7 +264,7 @@ export const SettingsOverlay: React.FC = () => {
                 transition={{ type: "spring", damping: 25, stiffness: 300 }}
                 className="glass-container w-full max-w-xl bg-gray-900/60 border border-white/20 rounded-[2.5rem] shadow-[0_30px_60px_rgba(0,0,0,0.6)] relative flex flex-col"
                 onMouseMove={(e) => handleGlassMouseMove(e, 0.2)}
-                style={{ height: '85vh', overflow: 'hidden' }}
+                style={{ height: '85vh', overflow: 'hidden', '--glass-hover-scale': '1', '--glass-content-scale': '1' } as any}
             >
                 {/* Fixed Header */}
                 <div className="glass-content p-8 flex-shrink-0 flex items-center justify-between border-b border-white/5 relative z-20">
@@ -316,6 +345,7 @@ export const SettingsOverlay: React.FC = () => {
                             <div
                                 className="glass-container bg-black/30 rounded-[2rem] border border-white/5 p-4 flex flex-col items-center gap-1"
                                 onMouseMove={(e) => handleGlassMouseMove(e, 0.1)}
+                                style={{ '--glass-hover-scale': '1.004', '--glass-content-scale': '1.001' } as any}
                             >
                                 <div className="glass-content glass-container-flat bg-black/50 p-1.5 rounded-2xl flex border border-white/5 relative w-full">
                                     <div
@@ -348,8 +378,9 @@ export const SettingsOverlay: React.FC = () => {
                                     <button
                                         key={m}
                                         onClick={() => setMapMarkerType(m)}
-                                        className={`group relative flex flex-col items-center gap-3 p-4 rounded-3xl border transition-all duration-300 overflow-hidden ${mapMarkerType === m ? 'bg-blue-600/20 border-blue-500 shadow-[0_10px_30px_rgba(59,130,246,0.15)] scale-[1.02]' : 'bg-black/40 border-white/5 hover:border-white/20 opacity-60 hover:opacity-100 hover:scale-[1.01]'}`}
+                                        className={`group relative flex flex-col items-center gap-3 p-4 rounded-3xl border transition-all duration-300 overflow-hidden ${mapMarkerType === m ? 'bg-blue-600/20 border-blue-500 shadow-[0_10px_30px_rgba(59,130,246,0.15)]' : 'bg-black/40 border-white/5 hover:border-white/20 opacity-60 hover:opacity-100 hover:scale-[1.004]'}`}
                                         onMouseMove={(e) => handleGlassMouseMove(e, 0.1)}
+                                        style={{ '--glass-hover-scale': '1.004', '--glass-content-scale': '1.001' } as any}
                                     >
                                         {/* Background Glow for Active State */}
                                         {mapMarkerType === m && (
@@ -395,6 +426,7 @@ export const SettingsOverlay: React.FC = () => {
                         <div
                             className="glass-container bg-black/30 rounded-[2rem] border border-white/5 p-4 flex flex-col items-center gap-1"
                             onMouseMove={(e) => handleGlassMouseMove(e, 0.1)}
+                            style={{ '--glass-hover-scale': '1.004', '--glass-content-scale': '1.001' } as any}
                         >
                             <div className="glass-content glass-container-flat bg-black/50 p-1.5 rounded-2xl flex border border-white/5 relative w-full">
                                 <div
@@ -434,7 +466,7 @@ export const SettingsOverlay: React.FC = () => {
                         <div
                             className="glass-container bg-black/30 rounded-[2rem] border border-white/5 shadow-[inset_0_2px_20px_rgba(0,0,0,0.5)] p-5"
                             onMouseMove={(e) => handleGlassMouseMove(e, 0.1)}
-                            style={{ '--glass-hover-scale': '1.015', '--glass-content-scale': '1.01' } as any}
+                            style={{ '--glass-hover-scale': '1.004', '--glass-content-scale': '1.001' } as any}
                         >
                             <div className="glass-content flex items-center gap-3 w-full">
                                 <div className="relative flex-[2] w-0">
@@ -455,7 +487,7 @@ export const SettingsOverlay: React.FC = () => {
                                         setUserWheelRotation(val);
                                         setTimeout(() => setIsSavingRotation(false), 800);
                                     }}
-                                    className={`flex-1 h-[52px] flex items-center justify-center gap-2 rounded-2xl border transition-all ${isSavingRotation ? 'bg-green-500/40 border-green-500 text-white scale-95' : 'bg-blue-600/20 border-blue-500/50 text-blue-400 hover:bg-blue-600/40 hover:scale-[1.02] active:scale-95 shadow-lg shadow-blue-900/10'}`}
+                                    className={`flex-1 h-[52px] flex items-center justify-center gap-2 rounded-2xl border transition-all ${isSavingRotation ? 'bg-green-500/40 border-green-500 text-white scale-95' : 'bg-blue-600/20 border-blue-500/50 text-blue-400 hover:bg-blue-600/40 hover:scale-[1.004] active:scale-95 shadow-lg shadow-blue-900/10'}`}
                                     onMouseMove={(e) => handleGlassMouseMove(e, 0.15)}
                                 >
                                     <Save size={16} className={isSavingRotation ? 'animate-bounce' : ''} />
@@ -494,7 +526,7 @@ export const SettingsOverlay: React.FC = () => {
                         <div
                             className="glass-container bg-black/30 rounded-[2.5rem] border border-white/5 shadow-[inset_0_2px_20px_rgba(0,0,0,0.5)] p-5 overflow-hidden"
                             onMouseMove={(e) => handleGlassMouseMove(e, 0.1)}
-                            style={{ '--glass-hover-scale': '1.015', '--glass-content-scale': '1.01' } as any}
+                            style={{ '--glass-hover-scale': '1.004', '--glass-content-scale': '1.001' } as any}
                         >
                             <div className="glass-content grid grid-cols-[1fr_1.2fr] gap-6 items-center">
                                 {/* Left: Controls */}
@@ -559,7 +591,7 @@ export const SettingsOverlay: React.FC = () => {
                         <div
                             className="glass-container bg-black/30 rounded-[2rem] border border-white/5 shadow-[inset_0_2px_20px_rgba(0,0,0,0.5)] p-5"
                             onMouseMove={(e) => handleGlassMouseMove(e, 0.1)}
-                            style={{ '--glass-hover-scale': '1.015', '--glass-content-scale': '1.01' } as any}
+                            style={{ '--glass-hover-scale': '1.004', '--glass-content-scale': '1.001' } as any}
                         >
                             <div className="glass-content flex items-center justify-between gap-6">
                                 {/* Left Side: Detailed Explanations */}
@@ -615,7 +647,7 @@ export const SettingsOverlay: React.FC = () => {
                         <div
                             className={`glass-container bg-black/30 rounded-[2rem] border border-white/5 shadow-[inset_0_2px_20px_rgba(0,0,0,0.5)] p-5 transition-all duration-300 ${suspensionTravelMode === 'raw' ? 'opacity-40 pointer-events-none filter blur-[0.5px]' : ''}`}
                             onMouseMove={(e) => handleGlassMouseMove(e, 0.1)}
-                            style={{ '--glass-hover-scale': '1.015', '--glass-content-scale': '1.01' } as any}
+                            style={{ '--glass-hover-scale': '1.004', '--glass-content-scale': '1.001' } as any}
                         >
                             <div className="glass-content flex items-center justify-between gap-6">
                                 {/* Left Side: Detailed Explanations */}
@@ -688,22 +720,24 @@ export const SettingsOverlay: React.FC = () => {
                                 <Tooltip text="Reset layout and visibility for this category" position="bottom">
                                     <button
                                         onClick={() => {
-                                            const confirmReset = window.confirm(`Reset all ${activeSettingsCategory} charts to default layout and visibility?`);
+                                            const isCustom = chartLayoutMode === 'custom';
+                                            const targetLabel = isCustom ? 'custom layout' : `${activeSettingsCategory} charts`;
+                                            const confirmReset = window.confirm(`Reset ${targetLabel} to default layout and visibility?`);
                                             if (confirmReset) {
-                                                // Logic to clear custom visibility/order for this category
-                                                const custom = JSON.parse(localStorage.getItem('custom_chart_settings') || '{}');
-                                                const targetIds = (CATEGORY_CHART_CONFIGS[activeSettingsCategory as keyof typeof CATEGORY_CHART_CONFIGS] || []).map(c => `${c.id}-${c.wheelIndex ?? 'all'}`);
+                                                const storageKey = isCustom ? 'custom_chart_settings' : 'preset_chart_settings';
+                                                const saved = JSON.parse(localStorage.getItem(storageKey) || '{}');
 
-                                                targetIds.forEach(key => {
-                                                    if (custom[key]) {
-                                                        delete custom[key].visible;
-                                                        delete custom[key].order;
-                                                        if (Object.keys(custom[key]).length === 0) delete custom[key];
-                                                    }
-                                                });
-                                                localStorage.setItem('custom_chart_settings', JSON.stringify(custom));
-                                                // Refresh current category
-                                                setActiveChartCategory(activeSettingsCategory as any);
+                                                if (isCustom) {
+                                                    localStorage.removeItem('custom_chart_settings');
+                                                    useTelemetryStore.getState().refreshCustomChartConfigs();
+                                                } else {
+                                                    const targetIds = (CATEGORY_CHART_CONFIGS[activeSettingsCategory as keyof typeof CATEGORY_CHART_CONFIGS] || []).map(c => `${c.id}-${c.wheelIndex ?? 'all'}`);
+                                                    targetIds.forEach(key => {
+                                                        delete saved[key];
+                                                    });
+                                                    localStorage.setItem('preset_chart_settings', JSON.stringify(saved));
+                                                    useTelemetryStore.getState().setActiveChartCategory(activeSettingsCategory as any);
+                                                }
                                             }
                                         }}
                                         className="p-2 text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all rounded-xl flex items-center gap-2 px-3 border border-white/5 glass-container-flat"
@@ -715,63 +749,314 @@ export const SettingsOverlay: React.FC = () => {
                             </div>
                         </div>
 
-                        {/* Category Navigation for Settings */}
-                        <div className="flex justify-center mb-2">
-                            <div className="relative flex items-center p-1 bg-[#1a1a1e]/60 backdrop-blur-3xl rounded-full border border-white/5 h-9 overflow-hidden group/toggle shadow-lg pointer-events-auto" onMouseMove={handleGlassMouseMove}>
-                                <div className="glass-content relative flex items-center h-full">
-                                    {(() => {
-                                        const availableTabs = [
-                                            { id: 'Driver', label: 'DRIVER' },
-                                            { id: 'Tyres', label: 'TYRES' },
-                                            { id: 'Dynamics', label: 'DYNAMICS' },
-                                            { id: 'Handling', label: 'HANDLING' },
-                                            { id: 'Systems', label: 'SYSTEMS' },
-                                        ];
+                        {/* Layout Mode Selector (Preset vs Custom) */}
+                        <div
+                            className="glass-container bg-black/30 rounded-[2rem] border border-white/5 p-4 flex flex-col items-center gap-2 mb-2"
+                            onMouseMove={(e) => handleGlassMouseMove(e, 0.1)}
+                            style={{ '--glass-hover-scale': '1.004', '--glass-content-scale': '1.001' } as any}
+                        >
+                            <div className="glass-content glass-container-flat bg-black/50 p-1.5 rounded-2xl flex border border-white/5 relative w-full">
+                                <div
+                                    className="absolute top-1.5 bottom-1.5 w-[calc(50%-6px)] bg-blue-500/20 backdrop-blur-md rounded-xl border border-blue-500/30 transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] shadow-[0_0_15px_rgba(59,130,246,0.2)]"
+                                    style={{ left: chartLayoutMode === 'preset' ? '6px' : 'calc(50%)' }}
+                                />
+                                <button
+                                    onClick={() => setChartLayoutMode('preset')}
+                                    className={`relative z-10 flex-1 py-2.5 text-[11px] font-black uppercase transition-all rounded-xl ${chartLayoutMode === 'preset' ? 'text-blue-400 font-extrabold' : 'text-gray-500 hover:text-gray-300'}`}
+                                >
+                                    Preset Tabs
+                                </button>
+                                <button
+                                    onClick={() => setChartLayoutMode('custom')}
+                                    className={`relative z-10 flex-1 py-2.5 text-[11px] font-black uppercase transition-all rounded-xl ${chartLayoutMode === 'custom' ? 'text-blue-400 font-extrabold' : 'text-gray-500 hover:text-gray-300'}`}
+                                >
+                                    Custom (All-in-One)
+                                </button>
+                            </div>
+                            <p className="text-[10px] text-gray-400 font-semibold tracking-wide flex items-center gap-1.5 justify-center">
+                                <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-[0_0_8px_#3b82f6] animate-pulse" />
+                                {chartLayoutMode === 'preset' ? 'Organizes charts into preset category tabs' : 'Custom layout: All enabled charts in single scrollable stack'}
+                            </p>
+                        </div>
 
-                                        const activeIndex = availableTabs.findIndex(t => t.id === activeSettingsCategory);
+                        {/* Category Navigation for Settings (Only shown in Preset mode) */}
+                        {chartLayoutMode === 'preset' ? (
+                            <div className="flex justify-center mb-2">
+                                <div className="relative flex items-center p-1 bg-[#1a1a1e]/60 backdrop-blur-3xl rounded-full border border-white/5 h-9 overflow-hidden group/toggle shadow-lg pointer-events-auto" onMouseMove={handleGlassMouseMove}>
+                                    <div className="glass-content relative flex items-center h-full">
+                                        {(() => {
+                                            const availableTabs = [
+                                                { id: 'Driver', label: 'DRIVER' },
+                                                { id: 'Tyres', label: 'TYRES' },
+                                                { id: 'Dynamics', label: 'DYNAMICS' },
+                                                { id: 'Handling', label: 'HANDLING' },
+                                                { id: 'Systems', label: 'SYSTEMS' },
+                                            ];
 
-                                        return (
-                                            <>
-                                                {/* Sliding Active Block */}
-                                                <div
-                                                    className="absolute bg-blue-600 rounded-full shadow-[0_0_12px_rgba(37,99,235,0.4)] transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)]"
-                                                    style={{
-                                                        height: 'calc(100% - 4px)',
-                                                        width: `calc(${100 / availableTabs.length}% - 4px)`,
-                                                        left: `calc(${(activeIndex / availableTabs.length) * 100}% + 2px)`,
-                                                        top: '2px'
-                                                    }}
-                                                />
+                                            const activeIndex = availableTabs.findIndex(t => t.id === activeSettingsCategory);
 
-                                                {availableTabs.map((cat) => (
-                                                    <button
-                                                        key={cat.id}
-                                                        onClick={() => {
-                                                            setActiveSettingsCategory(cat.id);
-                                                            // Sync back to dashboard if it's a chart category
-                                                            if (cat.id !== 'Driver') {
-                                                                setActiveChartCategory(cat.id as any);
-                                                            }
+                                            return (
+                                                <>
+                                                    {/* Sliding Active Block */}
+                                                    <div
+                                                        className="absolute bg-blue-600 rounded-full shadow-[0_0_12px_rgba(37,99,235,0.4)] transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)]"
+                                                        style={{
+                                                            height: 'calc(100% - 4px)',
+                                                            width: `calc(${100 / availableTabs.length}% - 4px)`,
+                                                            left: `calc(${(activeIndex / availableTabs.length) * 100}% + 2px)`,
+                                                            top: '2px'
                                                         }}
-                                                        className={`relative z-10 px-4 h-full flex items-center justify-center text-[9px] font-black uppercase tracking-[0.1em] transition-colors duration-300 flex-1 min-w-[85px] ${activeSettingsCategory === cat.id ? 'text-white' : 'text-gray-500 hover:text-white'
-                                                            }`}
+                                                    />
+
+                                                    {availableTabs.map((cat) => (
+                                                        <button
+                                                            key={cat.id}
+                                                            onClick={() => {
+                                                                setActiveSettingsCategory(cat.id);
+                                                                if (cat.id !== 'Driver') {
+                                                                    setActiveChartCategory(cat.id as any);
+                                                                }
+                                                            }}
+                                                            className={`relative z-10 px-4 h-full flex items-center justify-center text-[9px] font-black uppercase tracking-[0.1em] transition-colors duration-300 flex-1 min-w-[85px] ${activeSettingsCategory === cat.id ? 'text-white' : 'text-gray-500 hover:text-white'}`}
+                                                        >
+                                                            {cat.label}
+                                                        </button>
+                                                    ))}
+                                                </>
+                                            );
+                                        })()}
+                                    </div>
+                                </div>
+                            </div>
+                        ) : null}
+                        {/* Selector Checklist (Active in BOTH Preset Mode & Custom Mode) */}
+                        <div className="flex flex-col gap-2">
+                            <div
+                                className="glass-container bg-black/40 rounded-2xl border border-white/10 p-3"
+                                onMouseMove={(e) => handleGlassMouseMove(e, 0.1)}
+                                style={{ '--glass-hover-scale': '1.004', '--glass-content-scale': '1.001' } as any}
+                            >
+                                <button
+                                    onClick={() => setIsSelectorOpen(!isSelectorOpen)}
+                                    className="w-full flex items-center justify-between px-2 py-1 text-[11px] font-black uppercase tracking-wider text-blue-400 hover:text-white transition-colors"
+                                >
+                                    <span className="flex items-center gap-2">
+                                        <CheckSquare size={14} className="text-blue-400" />
+                                        Select Charts ({displayCharts.filter(c => c.visible).length} / {displayCharts.length} Checked)
+                                    </span>
+                                    <ChevronDown size={14} className={`transition-transform duration-200 ${isSelectorOpen ? 'rotate-180' : ''}`} />
+                                </button>
+
+                                {isSelectorOpen && (
+                                    <div className="mt-3 pt-3 border-t border-white/5 flex flex-col gap-3">
+                                        {/* Search Input & Select All Controls */}
+                                        <div className="flex items-center gap-2">
+                                            <div className="relative flex-1">
+                                                <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+                                                <input
+                                                    type="text"
+                                                    placeholder="Search telemetry channels..."
+                                                    value={chartSearchQuery}
+                                                    onChange={(e) => setChartSearchQuery(e.target.value)}
+                                                    className="w-full bg-black/50 border border-white/10 rounded-xl py-1.5 pl-8 pr-3 text-[10px] text-white placeholder-gray-600 focus:outline-none focus:border-blue-500/50 transition-all font-mono"
+                                                />
+                                            </div>
+                                            <button
+                                                onClick={() => {
+                                                    const storageKey = chartLayoutMode === 'custom' ? 'custom_chart_settings' : 'preset_chart_settings';
+                                                    const saved = JSON.parse(localStorage.getItem(storageKey) || '{}');
+                                                    displayCharts.forEach(c => {
+                                                        const key = `${c.id}-${c.wheelIndex ?? 'all'}`;
+                                                        saved[key] = { ...saved[key], visible: true };
+                                                    });
+                                                    localStorage.setItem(storageKey, JSON.stringify(saved));
+                                                    if (chartLayoutMode === 'custom') {
+                                                        useTelemetryStore.getState().refreshCustomChartConfigs();
+                                                    } else {
+                                                        useTelemetryStore.getState().setActiveChartCategory(activeSettingsCategory as any);
+                                                    }
+                                                }}
+                                                className="px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider text-blue-400 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 rounded-xl transition-all"
+                                            >
+                                                All
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    const storageKey = chartLayoutMode === 'custom' ? 'custom_chart_settings' : 'preset_chart_settings';
+                                                    const saved = JSON.parse(localStorage.getItem(storageKey) || '{}');
+                                                    displayCharts.forEach(c => {
+                                                        const key = `${c.id}-${c.wheelIndex ?? 'all'}`;
+                                                        saved[key] = { ...saved[key], visible: false };
+                                                    });
+                                                    localStorage.setItem(storageKey, JSON.stringify(saved));
+                                                    if (chartLayoutMode === 'custom') {
+                                                        useTelemetryStore.getState().refreshCustomChartConfigs();
+                                                    } else {
+                                                        useTelemetryStore.getState().setActiveChartCategory(activeSettingsCategory as any);
+                                                    }
+                                                }}
+                                                className="px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider text-gray-400 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all"
+                                            >
+                                                Clear
+                                            </button>
+                                        </div>
+
+                                        {/* Category Filter Pills (Custom Mode only) */}
+                                        {chartLayoutMode === 'custom' && (
+                                            <div className="flex flex-wrap gap-1">
+                                                {(['ALL', 'Driver', 'Tyres', 'Dynamics', 'Handling', 'Systems'] as const).map(cat => (
+                                                    <button
+                                                        key={cat}
+                                                        onClick={() => setActiveCategoryFilter(cat)}
+                                                        className={`px-2.5 py-1 text-[9px] font-black uppercase tracking-wider rounded-lg border transition-all ${
+                                                            activeCategoryFilter === cat
+                                                            ? 'bg-blue-600 text-white border-blue-400 shadow-[0_0_10px_rgba(37,99,235,0.4)]'
+                                                            : 'bg-white/5 text-gray-400 border-white/5 hover:text-white hover:bg-white/10'
+                                                        }`}
                                                     >
-                                                        {cat.label}
+                                                        {cat}
                                                     </button>
                                                 ))}
-                                            </>
-                                        );
-                                    })()}
-                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Grouped Channel Checklist */}
+                                        <div className="max-h-56 overflow-y-auto custom-scrollbar flex flex-col gap-3 pr-1">
+                                            {(() => {
+                                                const categories: Array<{ id: 'Driver' | 'Tyres' | 'Dynamics' | 'Handling' | 'Systems', label: string }> = [
+                                                    { id: 'Driver', label: 'DRIVER' },
+                                                    { id: 'Tyres', label: 'TYRES' },
+                                                    { id: 'Dynamics', label: 'DYNAMICS' },
+                                                    { id: 'Handling', label: 'HANDLING' },
+                                                    { id: 'Systems', label: 'SYSTEMS' },
+                                                ];
+
+                                                const getChartCat = (c: { id: string, alias?: string }) => {
+                                                    const id = c.id;
+                                                    const alias = c.alias || '';
+                                                    if (id === 'Speed' || id === 'Ground Speed' || id === 'Throttle Pos' || id === 'Brake Pos' || id === 'Clutch Pos' || id === 'Gear' || id === 'Steering Angle' || id === 'Engine RPM' || alias.includes('Speed') || alias.includes('Throttle') || alias.includes('Brake') || alias.includes('Steering')) return 'Driver';
+                                                    if (id === 'TireHeat' || id === 'TyresPressure' || alias.includes('Temp') || alias.includes('Pressure')) return 'Tyres';
+                                                    if (id === 'Pitch' || id === 'Roll' || id === 'RideHeights' || id.includes('RideHeight') || id === 'G Force Lat' || id === 'G Force Long' || alias.includes('Pitch') || alias.includes('Roll') || alias.includes('G-Force') || alias.includes('Ride Height')) return 'Dynamics';
+                                                    if (id === 'Susp Pos' || id.includes('Susp') || id.includes('3rdDeflection') || id === 'Yaw Rate' || id === 'Slip Ratio' || id === 'HandlingMerged' || alias.includes('Susp') || alias.includes('Deflection') || alias.includes('Yaw') || alias.includes('Slip')) return 'Handling';
+                                                    if (id === 'TC' || id === 'ABS' || id === 'SoC' || id === 'Fuel Level' || alias.includes('TC') || alias.includes('ABS') || alias.includes('Hybrid') || alias.includes('Fuel')) return 'Systems';
+                                                    return 'Driver';
+                                                };
+
+                                                const getThemeColor = (colorStr?: string) => {
+                                                    if (!colorStr) return '#3b82f6';
+                                                    if (colorStr.startsWith('#')) return colorStr;
+                                                    return colorStr;
+                                                };
+
+                                                const filtered = displayCharts.filter(c => {
+                                                    if (chartLayoutMode === 'custom' && activeCategoryFilter !== 'ALL' && getChartCat(c) !== activeCategoryFilter) return false;
+                                                    if (chartSearchQuery.trim()) {
+                                                        const query = chartSearchQuery.toLowerCase();
+                                                        const nameMatch = (c.alias || c.id).toLowerCase().includes(query);
+                                                        return nameMatch;
+                                                    }
+                                                    return true;
+                                                });
+
+                                                if (filtered.length === 0) {
+                                                    return <div className="text-[10px] text-gray-500 italic text-center py-4">No matching telemetry channels found</div>;
+                                                }
+
+                                                if (chartLayoutMode === 'preset' || activeCategoryFilter !== 'ALL' || chartSearchQuery.trim()) {
+                                                    return (
+                                                        <div className="grid grid-cols-2 gap-1.5">
+                                                            {filtered.map(c => {
+                                                                const key = `${c.id}-${c.wheelIndex ?? 'all'}`;
+                                                                const color = getThemeColor(c.color);
+                                                                return (
+                                                                    <button
+                                                                        key={key}
+                                                                        onClick={() => updateChartConfig(c.id, { visible: !c.visible }, c.wheelIndex)}
+                                                                        className={`flex items-center gap-2 p-2 rounded-xl border text-left transition-all text-[10px] font-bold ${
+                                                                            c.visible
+                                                                            ? 'text-white'
+                                                                            : 'bg-white/5 border-white/5 text-gray-500 hover:text-gray-300'
+                                                                        }`}
+                                                                        style={c.visible ? {
+                                                                            backgroundColor: `${color}20`,
+                                                                            borderColor: `${color}60`,
+                                                                            boxShadow: `0 0 10px ${color}25`
+                                                                        } : {}}
+                                                                    >
+                                                                        <div
+                                                                            className={`w-3.5 h-3.5 rounded-md flex items-center justify-center border transition-all ${
+                                                                                c.visible ? 'text-white border-transparent' : 'border-white/20 bg-transparent'
+                                                                            }`}
+                                                                            style={c.visible ? { backgroundColor: color } : {}}
+                                                                        >
+                                                                            {c.visible && <Check size={10} strokeWidth={3} />}
+                                                                        </div>
+                                                                        <span className="truncate flex-1">{c.alias || c.id}</span>
+                                                                    </button>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    );
+                                                }
+
+                                                return categories.map(cat => {
+                                                    const groupCharts = filtered.filter(c => getChartCat(c) === cat.id);
+                                                    if (groupCharts.length === 0) return null;
+                                                    return (
+                                                        <div key={cat.id} className="flex flex-col gap-1.5">
+                                                            <div className="text-[9px] font-black text-gray-400 uppercase tracking-widest pt-1">
+                                                                {cat.label} ({groupCharts.filter(c => c.visible).length}/{groupCharts.length})
+                                                            </div>
+                                                            <div className="grid grid-cols-2 gap-1.5">
+                                                                {groupCharts.map(c => {
+                                                                    const key = `${c.id}-${c.wheelIndex ?? 'all'}`;
+                                                                    const color = getThemeColor(c.color);
+                                                                    return (
+                                                                        <button
+                                                                            key={key}
+                                                                            onClick={() => updateChartConfig(c.id, { visible: !c.visible }, c.wheelIndex)}
+                                                                            className={`flex items-center gap-2 p-2 rounded-xl border text-left transition-all text-[10px] font-bold ${
+                                                                                c.visible
+                                                                                ? 'text-white'
+                                                                                : 'bg-white/5 border-white/5 text-gray-500 hover:text-gray-300'
+                                                                            }`}
+                                                                            style={c.visible ? {
+                                                                                backgroundColor: `${color}20`,
+                                                                                borderColor: `${color}60`,
+                                                                                boxShadow: `0 0 10px ${color}25`
+                                                                            } : {}}
+                                                                        >
+                                                                            <div
+                                                                                className={`w-3.5 h-3.5 rounded-md flex items-center justify-center border transition-all ${
+                                                                                    c.visible ? 'text-white border-transparent' : 'border-white/20 bg-transparent'
+                                                                                }`}
+                                                                                style={c.visible ? { backgroundColor: color } : {}}
+                                                                            >
+                                                                                {c.visible && <Check size={10} strokeWidth={3} />}
+                                                                            </div>
+                                                                            <span className="truncate flex-1">{c.alias || c.id}</span>
+                                                                        </button>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                });
+                                            })()}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         </div>
 
-                        {/* Chart List Container */}
+                        {/* Chart List Container - Aligned with Settings Glass Design System */}
                         <div
-                            className="glass-container bg-black/30 rounded-[2.5rem] border border-white/5 shadow-[inset_0_2px_20px_rgba(0,0,0,0.5)] p-4"
+                            className="glass-container bg-black/30 rounded-[2.5rem] border border-white/5 shadow-[inset_0_2px_20px_rgba(0,0,0,0.5)] p-5 overflow-hidden"
+                            onMouseMove={(e) => handleGlassMouseMove(e, 0.1)}
+                            style={{ '--glass-hover-scale': '1.004', '--glass-content-scale': '1.001' } as any}
                         >
                             <div className="glass-content flex flex-col gap-3">
-                                {displayCharts.map((config, idx) => {
+                                {(chartLayoutMode === 'custom' ? displayCharts.filter(c => c.visible) : displayCharts).map((config, idx) => {
                                     const displayUnit = getDisplayUnit(config);
                                     return (
                                         <div
@@ -781,64 +1066,60 @@ export const SettingsOverlay: React.FC = () => {
                                             onDragOver={(e) => handleDragOver(e, idx)}
                                             onDrop={(e) => handleDrop(e, idx)}
                                             onDragEnd={handleDragEnd}
-                                            className={`relative group/item glass-container rounded-[1.5rem] border flex flex-col transition-all duration-300
+                                            className={`relative group/item glass-container-flat rounded-2xl border flex items-center p-3.5 gap-4 transition-all duration-200
                                                 ${draggedIndex === idx ? 'opacity-40 grayscale scale-95' : 'opacity-100'}
-                                                ${dragOverIndex === idx ? 'bg-blue-500/10 border-blue-500/30 shadow-[0_0_20px_rgba(59,130,246,0.3)]' : 'border-white/10 hover:border-white/30'}`}
-                                            onMouseMove={handleGlassMouseMove}
+                                                ${dragOverIndex === idx ? 'bg-blue-500/10 border-blue-500/40 shadow-[0_0_20px_rgba(59,130,246,0.3)]' : 'bg-black/40 border-white/5 hover:border-white/20 hover:bg-black/60'}`}
                                             style={{
                                                 backgroundColor: dragOverIndex === idx ? undefined : `${config.color}15`,
                                                 borderColor: dragOverIndex === idx ? undefined : `${config.color}35`,
                                                 boxShadow: dragOverIndex === idx ? undefined : `0 4px 15px -3px ${config.color}15`,
-                                                '--glass-hover-scale': '1.015'
-                                            } as any}
+                                            }}
                                         >
                                             {dragOverIndex === idx && dropPosition === 'top' && (
-                                                <div className="absolute top-[-6px] left-0 right-0 h-1 bg-blue-500 rounded-full animate-pulse z-[60]" />
+                                                <div className="absolute top-[-5px] left-0 right-0 h-1 bg-blue-500 rounded-full animate-pulse z-[60]" />
                                             )}
 
-                                            <div className="glass-content flex items-center p-4 gap-4">
-                                                <div className="cursor-grab active:cursor-grabbing text-gray-500 transition-colors" style={{ color: `${config.color}80` }}>
-                                                    <GripVertical size={20} />
-                                                </div>
-
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="font-black tracking-tight text-xs text-white uppercase truncate group-hover/item:translate-x-1 transition-transform">
-                                                        {config.alias || config.id}
-                                                    </div>
-                                                    <div
-                                                        key={`${config.id}-${displayUnit}`}
-                                                        className="text-[9px] font-bold uppercase tracking-widest mt-0.5 animate-in fade-in slide-in-from-left-1 duration-300"
-                                                        style={{ color: `${config.color}cc` }}
-                                                    >
-                                                        {displayUnit}
-                                                    </div>
-                                                </div>
-
-                                                <div className="relative w-9 h-9 rounded-xl overflow-hidden border border-white/10 group-hover/item:border-white/30 transition-all flex-shrink-0 shadow-lg" style={{ boxShadow: `0 0 10px ${config.color}40` }}>
-                                                    <input
-                                                        type="color"
-                                                        value={config.color}
-                                                        onChange={(e) => updateChartConfig(config.id, { color: e.target.value }, config.wheelIndex)}
-                                                        className="absolute inset-[-4px] w-[calc(100%+8px)] h-[calc(100%+8px)] cursor-pointer bg-transparent border-none appearance-none"
-                                                    />
-                                                    <div className="absolute inset-0 pointer-events-none" style={{ backgroundColor: config.color }} />
-                                                </div>
-
-                                                <button
-                                                    onClick={() => updateChartConfig(config.id, { visible: !config.visible }, config.wheelIndex)}
-                                                    className={`p-2.5 rounded-xl transition-all ${config.visible ? 'text-white' : 'text-gray-700 bg-white/5 border border-white/10'}`}
-                                                    style={{
-                                                        backgroundColor: config.visible ? `${config.color}40` : undefined,
-                                                        border: config.visible ? `1px solid ${config.color}60` : undefined,
-                                                        boxShadow: config.visible ? `0 0 15px ${config.color}20` : undefined
-                                                    }}
-                                                >
-                                                    {config.visible ? <Eye size={18} /> : <EyeOff size={18} />}
-                                                </button>
+                                            <div className="cursor-grab active:cursor-grabbing text-gray-500 hover:text-white transition-colors" style={{ color: `${config.color}90` }}>
+                                                <GripVertical size={18} />
                                             </div>
 
+                                            <div className="flex-1 min-w-0">
+                                                <div className="font-black tracking-tight text-xs text-white uppercase truncate group-hover/item:translate-x-0.5 transition-transform">
+                                                    {config.alias || config.id}
+                                                </div>
+                                                <div
+                                                    key={`${config.id}-${displayUnit}`}
+                                                    className="text-[9px] font-bold uppercase tracking-widest mt-0.5"
+                                                    style={{ color: `${config.color}cc` }}
+                                                >
+                                                    {displayUnit}
+                                                </div>
+                                            </div>
+
+                                            <div className="relative w-8 h-8 rounded-xl overflow-hidden border border-white/10 group-hover/item:border-white/30 transition-all flex-shrink-0 shadow-lg" style={{ boxShadow: `0 0 10px ${config.color}40` }}>
+                                                <input
+                                                    type="color"
+                                                    value={config.color}
+                                                    onChange={(e) => updateChartConfig(config.id, { color: e.target.value }, config.wheelIndex)}
+                                                    className="absolute inset-[-4px] w-[calc(100%+8px)] h-[calc(100%+8px)] cursor-pointer bg-transparent border-none appearance-none"
+                                                />
+                                                <div className="absolute inset-0 pointer-events-none" style={{ backgroundColor: config.color }} />
+                                            </div>
+
+                                            <button
+                                                onClick={() => updateChartConfig(config.id, { visible: !config.visible }, config.wheelIndex)}
+                                                className={`p-2 rounded-xl transition-all ${config.visible ? 'text-white' : 'text-gray-700 bg-white/5 border border-white/10'}`}
+                                                style={{
+                                                    backgroundColor: config.visible ? `${config.color}40` : undefined,
+                                                    border: config.visible ? `1px solid ${config.color}60` : undefined,
+                                                    boxShadow: config.visible ? `0 0 15px ${config.color}20` : undefined
+                                                }}
+                                            >
+                                                {config.visible ? <Eye size={16} /> : <EyeOff size={16} />}
+                                            </button>
+
                                             {dragOverIndex === idx && dropPosition === 'bottom' && (
-                                                <div className="absolute bottom-[-6px] left-0 right-0 h-1 bg-blue-500 rounded-full animate-pulse z-[60]" />
+                                                <div className="absolute bottom-[-5px] left-0 right-0 h-1 bg-blue-500 rounded-full animate-pulse z-[60]" />
                                             )}
                                         </div>
                                     );
@@ -855,7 +1136,7 @@ export const SettingsOverlay: React.FC = () => {
                             href="https://discord.gg/zNPehXA3jK"
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="group/discord flex items-center gap-2 px-4 py-2 bg-black/40 hover:bg-[#5865F2]/20 border border-white/5 hover:border-[#5865F2]/40 rounded-full transition-all duration-300 shadow-md hover:shadow-[0_0_15px_rgba(88,101,242,0.25)] hover:scale-[1.03] active:scale-95 cursor-pointer"
+                            className="group/discord flex items-center gap-2 px-4 py-2 bg-black/40 hover:bg-[#5865F2]/20 border border-white/5 hover:border-[#5865F2]/40 rounded-full transition-all duration-300 shadow-md hover:shadow-[0_0_15px_rgba(88,101,242,0.25)] hover:scale-[1.004] active:scale-95 cursor-pointer"
                             onMouseMove={handleGlassMouseMove}
                         >
                             <DiscordIcon size={14} className="text-gray-400 group-hover/discord:text-[#5865F2] transition-colors" />

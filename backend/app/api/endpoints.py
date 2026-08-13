@@ -238,6 +238,9 @@ class ProfileCreate(BaseModel):
 class ProfileUpdate(BaseModel):
     name: str
 
+class ProfileReorder(BaseModel):
+    profile_ids: List[str]
+
 @router.get("/profiles")
 async def list_profiles():
     profiles = ProfilesService.list_profiles()
@@ -249,6 +252,11 @@ async def list_profiles():
 @router.post("/profiles")
 async def create_profile(req: ProfileCreate):
     return ProfilesService.create_profile(req.name)
+
+@router.post("/profiles/reorder")
+async def reorder_profiles(req: ProfileReorder):
+    profiles = ProfilesService.reorder_profiles(req.profile_ids)
+    return {"profiles": profiles}
 
 @router.delete("/profiles/{profile_id}")
 async def delete_profile(profile_id: str):

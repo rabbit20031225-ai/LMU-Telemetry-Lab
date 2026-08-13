@@ -51,12 +51,21 @@ import {
 
 const CategoryTab = memo(({ id, label, isActive }: { id: any, label: string, isActive: boolean }) => {
     const setActiveChartCategory = useTelemetryStore(state => state.setActiveChartCategory);
+    const chartLayoutMode = useTelemetryStore(state => state.chartLayoutMode);
+    const setChartLayoutMode = useTelemetryStore(state => state.setChartLayoutMode);
+
+    const handleClick = () => {
+        if (chartLayoutMode === 'custom') {
+            setChartLayoutMode('preset');
+        }
+        setActiveChartCategory(id);
+    };
 
     return (
         <button
-            onClick={() => setActiveChartCategory(id)}
+            onClick={handleClick}
             className={`relative z-10 px-8 h-full flex items-center justify-center text-[11px] font-black uppercase tracking-[0.1em] transition-colors duration-300 flex-1 min-w-[120px] ${
-                isActive ? 'text-white' : 'text-gray-500 hover:text-white'
+                isActive && chartLayoutMode === 'preset' ? 'text-white' : 'text-gray-500 hover:text-white'
             }`}
         >
             {label}
@@ -86,6 +95,7 @@ function App() {
   const fetchStint = useTelemetryStore(state => state.fetchStint);
   const setActiveChartCategory = useTelemetryStore(state => state.setActiveChartCategory);
   const activeChartCategory = useTelemetryStore(state => state.activeChartCategory);
+  const chartLayoutMode = useTelemetryStore(state => state.chartLayoutMode);
   const liveDeltaStore = useTelemetryStore(state => state.liveDelta);
   const isPlaying = useTelemetryStore(state => state.isPlaying);
   const updatePlayback = useTelemetryStore(state => state.updatePlayback);
@@ -1282,7 +1292,7 @@ function App() {
                       <div className={`w-7 h-7 rounded-full flex items-center justify-center overflow-hidden ${activeProfile?.avatar_url ? '' : 'bg-blue-500/20 border border-blue-500/40 text-blue-400'}`}>
                         {activeProfile?.avatar_url ? (
                           <img
-                            src={activeProfile.avatar_url.startsWith('http') ? activeProfile.avatar_url : `${window.location.protocol}//${window.location.hostname}:8000${activeProfile.avatar_url}`}
+                            src={activeProfile.avatar_url.startsWith('http') ? activeProfile.avatar_url : activeProfile.avatar_url}
                             alt={activeProfile?.name || 'Avatar'}
                             className="w-full h-full object-cover"
                             onError={(e) => {
@@ -1414,57 +1424,61 @@ function App() {
                       className="flex-1 min-w-0 flex flex-col p-4 gap-4 overflow-y-auto custom-scrollbar"
                       style={{ minWidth: MIN_CHART_WIDTH }}
                     >
-                      {/* Category Navigation Tabs - Extended Capsule Style */}
-                      <div className="sticky top-0 z-[100] flex justify-center pt-2 pb-1 -mx-4">
-                        <div className="relative flex items-center px-2 py-1 bg-[#1a1a1e]/80 backdrop-blur-3xl rounded-full border border-white/10 h-10 group/toggle shadow-[0_8px_20px_rgba(0,0,0,0.5)] pointer-events-auto" onMouseMove={handleGlassMouseMove}>
-                          <div className="relative flex items-center h-full">
-                            {(() => {
-                              const availableTabs = [
-                                { id: 'Driver', label: 'DRIVER' },
-                                { id: 'Tyres', label: 'TYRES' },
-                                { id: 'Dynamics', label: 'DYNAMICS' },
-                                { id: 'Handling', label: 'HANDLING' },
-                                { id: 'Systems', label: 'SYSTEMS' },
-                              ].filter(cat => {
-                                if (cat.id === 'Driver') return true;
-                                if (!telemetryData) return false;
-                                const configs = CATEGORY_CHART_CONFIGS[cat.id as any];
-                                return configs?.some(c => telemetryData[c.id] !== undefined);
-                              });
+                      {/* Category Navigation Tabs - Only shown in Preset Mode */}
+                      {chartLayoutMode === 'preset' && (
+                        <div className="sticky top-0 z-[100] flex justify-center pt-2 pb-1 -mx-4">
+                          <div className="relative flex items-center px-2 py-1 bg-[#1a1a1e]/80 backdrop-blur-3xl rounded-full border border-white/10 h-10 group/toggle shadow-[0_8px_20px_rgba(0,0,0,0.5)] pointer-events-auto" onMouseMove={handleGlassMouseMove}>
+                            <div className="relative flex items-center h-full">
+                              {(() => {
+                                const availableTabs = [
+                                  { id: 'Driver', label: 'DRIVER' },
+                                  { id: 'Tyres', label: 'TYRES' },
+                                  { id: 'Dynamics', label: 'DYNAMICS' },
+                                  { id: 'Handling', label: 'HANDLING' },
+                                  { id: 'Systems', label: 'SYSTEMS' },
+                                ].filter(cat => {
+                                  if (cat.id === 'Driver') return true;
+                                  if (!telemetryData) return false;
+                                  const configs = CATEGORY_CHART_CONFIGS[cat.id as any];
+                                  return configs?.some(c => telemetryData[c.id] !== undefined);
+                                });
 
-                              const activeIndex = availableTabs.findIndex(t => t.id === activeChartCategory);
+                                const activeIndex = availableTabs.findIndex(t => t.id === activeChartCategory);
 
-                              return (
-                                <>
-                                  {/* Sliding Active Block with Layout Transition */}
-                                  <AnimatePresence>
-                                    <motion.div 
-                                      layoutId="activeCategoryBlock"
-                                      className="absolute bg-blue-600 rounded-full shadow-[0_0_12px_rgba(37,99,235,0.5)]"
-                                      style={{ 
-                                        height: 'calc(100% - 2px)',
-                                        width: `calc(${100 / availableTabs.length}% - 4px)`,
-                                        left: `calc(${(activeIndex / availableTabs.length) * 100}% + 2px)`,
-                                        top: '1px'
-                                      }}
-                                      transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-                                    />
-                                  </AnimatePresence>
+                                return (
+                                  <>
+                                    {/* Sliding Active Block with Layout Transition */}
+                                    {activeIndex >= 0 && (
+                                      <AnimatePresence>
+                                        <motion.div 
+                                          layoutId="activeCategoryBlock"
+                                          className="absolute bg-blue-600 rounded-full shadow-[0_0_12px_rgba(37,99,235,0.5)]"
+                                          style={{ 
+                                            height: 'calc(100% - 2px)',
+                                            width: `calc(${100 / availableTabs.length}% - 4px)`,
+                                            left: `calc(${(activeIndex / availableTabs.length) * 100}% + 2px)`,
+                                            top: '1px'
+                                          }}
+                                          transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                                        />
+                                      </AnimatePresence>
+                                    )}
 
-                                  {availableTabs.map((cat) => (
-                                    <CategoryTab 
-                                      key={cat.id} 
-                                      id={cat.id as any} 
-                                      label={cat.label}
-                                      isActive={activeChartCategory === cat.id}
-                                    />
-                                  ))}
-                                </>
-                              );
-                            })()}
+                                    {availableTabs.map((cat) => (
+                                      <CategoryTab 
+                                        key={cat.id} 
+                                        id={cat.id as any} 
+                                        label={cat.label}
+                                        isActive={activeChartCategory === cat.id}
+                                      />
+                                    ))}
+                                  </>
+                                );
+                              })()}
+                            </div>
                           </div>
                         </div>
-                      </div>
+                      )}
 
                       <div className="flex flex-col gap-2 min-w-0">
                         {chartConfigs

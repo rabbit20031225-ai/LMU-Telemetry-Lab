@@ -536,6 +536,56 @@ export const TelemetryChart = React.memo<TelemetryChartProps>(({
                 currentSeries.push(yaw.slice(startIdx, endIdx + 1));
             }
             currentVal = currentSeries[0] || new Float64Array(0);
+        } else if (channel === 'Pitch') {
+            const fRaw = extractChannelData(telemetryData, 'FrontRideHeight');
+            const rRaw = extractChannelData(telemetryData, 'RearRideHeight');
+            const flSusp = extractChannelData(telemetryData, 'Susp Pos', 0);
+            const frSusp = extractChannelData(telemetryData, 'Susp Pos', 1);
+            const rlSusp = extractChannelData(telemetryData, 'Susp Pos', 2);
+            const rrSusp = extractChannelData(telemetryData, 'Susp Pos', 3);
+
+            const len = fRaw ? fRaw.length : flSusp ? flSusp.length : 0;
+            if (len > 0) {
+                const pitchData = new Float64Array(len);
+                const WHEELBASE_MM = 2750;
+                for (let i = 0; i < len; i++) {
+                    let f_mm = 0, r_mm = 0;
+                    if (fRaw && rRaw) {
+                        f_mm = Math.abs(fRaw[i]) < 1.1 ? fRaw[i] * 1000 : fRaw[i];
+                        r_mm = Math.abs(rRaw[i]) < 1.1 ? rRaw[i] * 1000 : rRaw[i];
+                    } else if (flSusp && frSusp && rlSusp && rrSusp) {
+                        const f_m = (flSusp[i] + frSusp[i]) / 2;
+                        const r_m = (rlSusp[i] + rrSusp[i]) / 2;
+                        f_mm = Math.abs(f_m) < 1.1 ? f_m * 1000 : f_m;
+                        r_mm = Math.abs(r_m) < 1.1 ? r_m * 1000 : r_m;
+                    }
+                    const deltaRH = r_mm - f_mm;
+                    pitchData[i] = Math.atan2(deltaRH, WHEELBASE_MM) * (180 / Math.PI);
+                }
+                currentSeries.push(pitchData.slice(startIdx, endIdx + 1));
+            }
+            currentVal = currentSeries[0] || new Float64Array(0);
+        } else if (channel === 'Roll') {
+            const flSusp = extractChannelData(telemetryData, 'Susp Pos', 0);
+            const frSusp = extractChannelData(telemetryData, 'Susp Pos', 1);
+            const rlSusp = extractChannelData(telemetryData, 'Susp Pos', 2);
+            const rrSusp = extractChannelData(telemetryData, 'Susp Pos', 3);
+
+            if (flSusp && frSusp && rlSusp && rrSusp) {
+                const len = flSusp.length;
+                const rollData = new Float64Array(len);
+                const TRACK_WIDTH_MM = 1650;
+                for (let i = 0; i < len; i++) {
+                    const left_m = (flSusp[i] + rlSusp[i]) / 2;
+                    const right_m = (frSusp[i] + rrSusp[i]) / 2;
+                    const left_mm = Math.abs(left_m) < 1.1 ? left_m * 1000 : left_m;
+                    const right_mm = Math.abs(right_m) < 1.1 ? right_m * 1000 : right_m;
+                    const deltaRoll = left_mm - right_mm;
+                    rollData[i] = Math.atan2(deltaRoll, TRACK_WIDTH_MM) * (180 / Math.PI);
+                }
+                currentSeries.push(rollData.slice(startIdx, endIdx + 1));
+            }
+            currentVal = currentSeries[0] || new Float64Array(0);
         } else {
             const raw = extractChannelData(telemetryData, channel, wheelIndex);
             if (!raw) return;
@@ -734,6 +784,59 @@ export const TelemetryChart = React.memo<TelemetryChartProps>(({
                         return interp(currentDist, refDist, processed);
                     };
 
+                    const extractCalcRefSeries = (targetChannel: string) => {
+                        if (targetChannel === 'Pitch') {
+                            const fRef = alignAndExtract('FrontRideHeight', 0);
+                            const rRef = alignAndExtract('RearRideHeight', 0);
+                            const flRef = alignAndExtract('Susp Pos', 0);
+                            const frRef = alignAndExtract('Susp Pos', 1);
+                            const rlRef = alignAndExtract('Susp Pos', 2);
+                            const rrRef = alignAndExtract('Susp Pos', 3);
+
+                            const refLen = fRef ? fRef.length : flRef ? flRef.length : 0;
+                            if (refLen > 0) {
+                                const pitchRef = new Float64Array(refLen);
+                                const WHEELBASE_MM = 2750;
+                                for (let i = 0; i < refLen; i++) {
+                                    let f_mm = 0, r_mm = 0;
+                                    if (fRef && rRef) {
+                                        f_mm = Math.abs(fRef[i]) < 1.1 ? fRef[i] * 1000 : fRef[i];
+                                        r_mm = Math.abs(rRef[i]) < 1.1 ? rRef[i] * 1000 : rRef[i];
+                                    } else if (flRef && frRef && rlRef && rrRef) {
+                                        const f_m = (flRef[i] + frRef[i]) / 2;
+                                        const r_m = (rlRef[i] + rrRef[i]) / 2;
+                                        f_mm = Math.abs(f_m) < 1.1 ? f_m * 1000 : f_m;
+                                        r_mm = Math.abs(r_m) < 1.1 ? r_m * 1000 : r_m;
+                                    }
+                                    const deltaRH = r_mm - f_mm;
+                                    pitchRef[i] = Math.atan2(deltaRH, WHEELBASE_MM) * (180 / Math.PI);
+                                }
+                                return pitchRef;
+                            }
+                        } else if (targetChannel === 'Roll') {
+                            const flRef = alignAndExtract('Susp Pos', 0);
+                            const frRef = alignAndExtract('Susp Pos', 1);
+                            const rlRef = alignAndExtract('Susp Pos', 2);
+                            const rrRef = alignAndExtract('Susp Pos', 3);
+
+                            if (flRef && frRef && rlRef && rrRef) {
+                                const refLen = flRef.length;
+                                const rollRef = new Float64Array(refLen);
+                                const TRACK_WIDTH_MM = 1650;
+                                for (let i = 0; i < refLen; i++) {
+                                    const left_m = (flRef[i] + rlRef[i]) / 2;
+                                    const right_m = (frRef[i] + rrRef[i]) / 2;
+                                    const left_mm = Math.abs(left_m) < 1.1 ? left_m * 1000 : left_m;
+                                    const right_mm = Math.abs(right_m) < 1.1 ? right_m * 1000 : right_m;
+                                    const deltaRoll = left_mm - right_mm;
+                                    rollRef[i] = Math.atan2(deltaRoll, TRACK_WIDTH_MM) * (180 / Math.PI);
+                                }
+                                return rollRef;
+                            }
+                        }
+                        return null;
+                    };
+
                     if (isTimeSync) {
                         const curDur = currentElapsed[currentElapsed.length - 1] || 0;
                         const refDur = rElapsedTime[rElapsedTime.length - 1] || 0;
@@ -778,6 +881,9 @@ export const TelemetryChart = React.memo<TelemetryChartProps>(({
                                         if (aligned) refSeries.push(aligned);
                                     }
                                 }
+                            } else if (channel === 'Pitch' || channel === 'Roll') {
+                                const calcRef = extractCalcRefSeries(channel);
+                                if (calcRef) refSeries.push(calcRef);
                             } else if (channel !== 'Time Delta') {
                                 refSeries.push(alignAndExtract(channel)!);
                             }
@@ -818,6 +924,9 @@ export const TelemetryChart = React.memo<TelemetryChartProps>(({
                                         if (aligned) refSeries.push(aligned);
                                     }
                                 }
+                            } else if (channel === 'Pitch' || channel === 'Roll') {
+                                const calcRef = extractCalcRefSeries(channel);
+                                if (calcRef) refSeries.push(calcRef);
                             } else if (channel !== 'Time Delta') {
                                 refSeries.push(alignAndExtract(channel)!);
                             }
@@ -864,6 +973,9 @@ export const TelemetryChart = React.memo<TelemetryChartProps>(({
                                     if (aligned) refSeries.push(aligned);
                                 }
                             }
+                        } else if (channel === 'Pitch' || channel === 'Roll') {
+                            const calcRef = extractCalcRefSeries(channel);
+                            if (calcRef) refSeries.push(calcRef);
                         } else if (channel !== 'Time Delta') {
                             const aligned = alignAndExtract(channel);
                             if (aligned) refSeries.push(aligned);
@@ -998,6 +1110,9 @@ export const TelemetryChart = React.memo<TelemetryChartProps>(({
                 }
                 if (unit === 'MJ') {
                     return { text: v.toFixed(2), color: null };
+                }
+                if (channel === 'Pitch' || channel === 'Roll') {
+                    return { text: (v >= 0 ? "+" : "") + v.toFixed(2), color: null };
                 }
                 const text = (unit === 'mm' || unit === '%') ? v.toFixed(1) : Math.round(v).toFixed(0);
                 return { text, color: null };
@@ -1892,6 +2007,106 @@ export const TelemetryChart = React.memo<TelemetryChartProps>(({
         };
     }, [isXAxisTime]);
 
+    // Right-Click Drag Panning Effect for Zoomed View
+    useEffect(() => {
+        const el = chartRef.current;
+        if (!el) return;
+
+        let isRightDragging = false;
+        let startX = 0;
+        let initialMinX = 0;
+        let initialMaxX = 0;
+        let totalWidthPx = 1;
+
+        const handleMouseDown = (e: MouseEvent) => {
+            // Button 2 is Right Click
+            if (e.button !== 2) return;
+
+            const currentZoom = useTelemetryStore.getState().zoomRange;
+            const u = uplotRef.current;
+            if (!currentZoom || !u || !currentXDataRef.current) return;
+
+            e.preventDefault();
+            e.stopPropagation();
+
+            isRightDragging = true;
+            startX = e.clientX;
+            initialMinX = u.scales.x.min ?? 0;
+            initialMaxX = u.scales.x.max ?? (currentXDataRef.current[currentXDataRef.current.length - 1] || 100);
+            totalWidthPx = u.bbox ? u.bbox.width : el.clientWidth;
+        };
+
+        const handleMouseMove = (e: MouseEvent) => {
+            if (!isRightDragging) return;
+
+            const u = uplotRef.current;
+            const xData = currentXDataRef.current;
+            const currentZoom = useTelemetryStore.getState().zoomRange;
+            if (!u || !xData || !currentZoom) return;
+
+            e.preventDefault();
+
+            const deltaPx = e.clientX - startX;
+            const domainWidth = initialMaxX - initialMinX;
+            if (domainWidth <= 0 || totalWidthPx <= 0) return;
+
+            const deltaDomain = (deltaPx / totalWidthPx) * domainWidth;
+            const maxBound = xData[xData.length - 1] ?? 0;
+
+            let newMinX = initialMinX - deltaDomain;
+            let newMaxX = initialMaxX - deltaDomain;
+
+            if (newMinX < 0) {
+                newMinX = 0;
+                newMaxX = Math.min(domainWidth, maxBound);
+            } else if (newMaxX > maxBound) {
+                newMaxX = maxBound;
+                newMinX = Math.max(0, maxBound - domainWidth);
+            }
+
+            // Find corresponding index bounds in xData
+            let sIdx = -1, eIdx = -1;
+            for (let i = 0; i < xData.length; i++) {
+                if (xData[i] >= newMinX && sIdx === -1) sIdx = i;
+                if (xData[i] <= newMaxX) eIdx = i;
+            }
+
+            if (sIdx !== -1 && eIdx !== -1 && sIdx < eIdx) {
+                const lapStartIdx = startIdxRef.current;
+                const nextRange: [number, number] = [lapStartIdx + sIdx, lapStartIdx + eIdx];
+                if (currentZoom[0] !== nextRange[0] || currentZoom[1] !== nextRange[1]) {
+                    useTelemetryStore.getState().setZoomRange(nextRange);
+                }
+            }
+        };
+
+        const handleMouseUp = (e: MouseEvent) => {
+            if (isRightDragging) {
+                isRightDragging = false;
+            }
+        };
+
+        const handleContextMenu = (e: MouseEvent) => {
+            const currentZoom = useTelemetryStore.getState().zoomRange;
+            if (currentZoom || isRightDragging) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+        };
+
+        el.addEventListener('mousedown', handleMouseDown);
+        window.addEventListener('mousemove', handleMouseMove);
+        window.addEventListener('mouseup', handleMouseUp);
+        el.addEventListener('contextmenu', handleContextMenu);
+
+        return () => {
+            el.removeEventListener('mousedown', handleMouseDown);
+            window.removeEventListener('mousemove', handleMouseMove);
+            window.removeEventListener('mouseup', handleMouseUp);
+            el.removeEventListener('contextmenu', handleContextMenu);
+        };
+    }, []);
+
 
     return (
         <div className={`mb-0.5 rounded-2xl flex flex-col items-stretch glass-container-flat glass-expand-pixel transition-all duration-300 group min-w-0 relative ${isResizing ? 'select-none' : ''}`}
@@ -1928,135 +2143,165 @@ export const TelemetryChart = React.memo<TelemetryChartProps>(({
                                 {isNoABS ? "NO ABS DATA" : (alias || channel)}
                             </span>
 
-                            {/* View Mode Toggle for Pedals (Throttle & Brake) */}
-                            {(channel === 'Throttle Pos' || channel === 'Brake Pos' || channel === 'PedalsMerged') && (
-                                <Tooltip text={`Switch to ${pedalsViewMode === 'split' ? 'Merged Throttle/Brake' : 'Split'} View`}>
-                                    <button
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            useTelemetryStore.getState().togglePedalsViewMode();
-                                        }}
-                                        className="p-1 hover:bg-white/10 rounded-md transition-colors text-white/40 hover:text-white ml-1"
-                                    >
-                                        {pedalsViewMode === 'merged' ? (
-                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" className="opacity-90">
-                                                <path d="M2 12h4c4 0 4-7 8-7h7m0 0l-3.5-3.5M21 5l-3.5 3.5" />
-                                                <path d="M6 12c4 0 4 7 8 7h7m0 0l-3.5-3.5M21 19l-3.5 3.5" />
-                                            </svg>
-                                        ) : (
-                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" className="opacity-90">
-                                                <path d="M2 5h7c4 0 4 7 8 7h5m0 0l-3.5-3.5M22 12l-3.5 3.5" />
-                                                <path d="M2 19h7c4 0 4-7 8-7" />
-                                            </svg>
-                                        )}
-                                    </button>
-                                </Tooltip>
-                            )}
+                            {/* Calculate Merge Button Visibility Eligibility for Split Groups */}
+                            {(() => {
+                                const storeConfigs = useTelemetryStore.getState().chartConfigs;
+                                const activeTelemetryData = useTelemetryStore.getState().telemetryData;
 
-                            {/* View Mode Toggle for Suspension */}
-                            {((channel === 'Susp Pos' && wheelIndex === 0) || channel === 'SuspPosFront') && (
-                                <Tooltip text={`Switch to ${suspensionViewMode === 'split' ? '2-Panel Merged' : '4-Panel Split'} View`}>
-                                    <button
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            useTelemetryStore.getState().toggleSuspensionViewMode();
-                                        }}
-                                        className="p-1 hover:bg-white/10 rounded-md transition-colors text-white/40 hover:text-white ml-1"
-                                    >
-                                        {suspensionViewMode === 'merged' ? (
-                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" className="opacity-90">
-                                                {/* Split Icon: Branching Right */}
-                                                <path d="M2 12h4c4 0 4-7 8-7h7m0 0l-3.5-3.5M21 5l-3.5 3.5" />
-                                                <path d="M6 12c4 0 4 7 8 7h7m0 0l-3.5-3.5M21 19l-3.5 3.5" />
-                                            </svg>
-                                        ) : (
-                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" className="opacity-90">
-                                                {/* Merge Icon: Converging Right */}
-                                                <path d="M2 5h7c4 0 4 7 8 7h5m0 0l-3.5-3.5M22 12l-3.5 3.5" />
-                                                <path d="M2 19h7c4 0 4-7 8-7" />
-                                            </svg>
-                                        )}
-                                    </button>
-                                </Tooltip>
-                            )}
+                                const isChannelActive = (id: string, wheelIdx?: number) => {
+                                    const config = storeConfigs.find(c => c.id === id && (wheelIdx === undefined ? true : c.wheelIndex === wheelIdx));
+                                    if (!config || !config.visible) return false;
+                                    if (activeTelemetryData && activeTelemetryData[id] === undefined && id !== 'PedalsMerged' && id !== 'ThirdDeflectionMerged' && id !== 'HandlingMerged' && id !== 'SuspPosFront' && id !== 'SuspPosRear') return false;
+                                    return true;
+                                };
 
-                            {/* View Mode Toggle for 3rd Deflection */}
-                            {(channel === 'Front3rdDeflection' || channel === 'ThirdDeflectionMerged') && (
-                                <Tooltip text={`Switch to ${thirdDeflectionViewMode === 'split' ? 'Merged F/R' : 'Split'} View`}>
-                                    <button
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            useTelemetryStore.getState().toggleThirdDeflectionViewMode();
-                                        }}
-                                        className="p-1 hover:bg-white/10 rounded-md transition-colors text-white/40 hover:text-white ml-1"
-                                    >
-                                        {thirdDeflectionViewMode === 'merged' ? (
-                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" className="opacity-90">
-                                                <path d="M2 12h4c4 0 4-7 8-7h7m0 0l-3.5-3.5M21 5l-3.5 3.5" />
-                                                <path d="M6 12c4 0 4 7 8 7h7m0 0l-3.5-3.5M21 19l-3.5 3.5" />
-                                            </svg>
-                                        ) : (
-                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" className="opacity-90">
-                                                <path d="M2 5h7c4 0 4 7 8 7h5m0 0l-3.5-3.5M22 12l-3.5 3.5" />
-                                                <path d="M2 19h7c4 0 4-7 8-7" />
-                                            </svg>
-                                        )}
-                                    </button>
-                                </Tooltip>
-                            )}
+                                const canTogglePedals = pedalsViewMode === 'merged' || (isChannelActive('Throttle Pos') && isChannelActive('Brake Pos'));
 
-                            {/* View Mode Toggle for Handling */}
-                            {(channel === 'Yaw Rate' || channel === 'HandlingMerged') && (
-                                <Tooltip text={`Switch to ${handlingViewMode === 'split' ? 'Merged' : 'Split'} View`}>
-                                    <button
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            useTelemetryStore.getState().toggleHandlingViewMode();
-                                        }}
-                                        className="p-1 hover:bg-white/10 rounded-md transition-colors text-white/40 hover:text-white ml-1"
-                                    >
-                                        {handlingViewMode === 'merged' ? (
-                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" className="opacity-90">
-                                                <path d="M2 12h4c4 0 4-7 8-7h7m0 0l-3.5-3.5M21 5l-3.5 3.5" />
-                                                <path d="M6 12c4 0 4 7 8 7h7m0 0l-3.5-3.5M21 19l-3.5 3.5" />
-                                            </svg>
-                                        ) : (
-                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" className="opacity-90">
-                                                <path d="M2 5h7c4 0 4 7 8 7h5m0 0l-3.5-3.5M22 12l-3.5 3.5" />
-                                                <path d="M2 19h7c4 0 4-7 8-7" />
-                                            </svg>
-                                        )}
-                                    </button>
-                                </Tooltip>
-                            )}
+                                const activeSuspCount = [0, 1, 2, 3].filter(w => isChannelActive('Susp Pos', w)).length;
+                                const canToggleSuspension = suspensionViewMode === 'merged' || activeSuspCount >= 2;
 
-                            {/* View Mode Toggle for Tyres Pressure */}
-                            {channel === 'TyresPressure' && (wheelIndex === undefined || wheelIndex === null || wheelIndex === 0) && (
-                                <Tooltip text={`Switch to ${tyresPressureViewMode === 'split' ? 'Merged' : 'Split'} View`}>
-                                    <button
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            useTelemetryStore.getState().toggleTyresPressureViewMode();
-                                        }}
-                                        className="p-1 hover:bg-white/10 rounded-md transition-colors text-white/40 hover:text-white ml-1"
-                                    >
-                                        {tyresPressureViewMode === 'merged' ? (
-                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" className="opacity-90">
-                                                <path d="M2 12h4c4 0 4-7 8-7h7m0 0l-3.5-3.5M21 5l-3.5 3.5" />
-                                                <path d="M6 12c4 0 4 7 8 7h7m0 0l-3.5-3.5M21 19l-3.5 3.5" />
-                                            </svg>
-                                        ) : (
-                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" className="opacity-90">
-                                                <path d="M2 5h7c4 0 4 7 8 7h5m0 0l-3.5-3.5M22 12l-3.5 3.5" />
-                                                <path d="M2 19h7c4 0 4-7 8-7" />
-                                            </svg>
-                                        )}
-                                    </button>
-                                </Tooltip>
-                            )}
+                                const canToggle3rdDeflection = thirdDeflectionViewMode === 'merged' || (isChannelActive('Front3rdDeflection') && isChannelActive('Rear3rdDeflection'));
 
-                            {/* View Mode Toggle for Ride Heights */}
-                            {channel === 'RideHeights' && (wheelIndex === undefined || wheelIndex === null || wheelIndex === 0) && (
+                                const canToggleHandling = handlingViewMode === 'merged' || (isChannelActive('Yaw Rate') && isChannelActive('Steering Angle'));
+
+                                const activePressureCount = [0, 1, 2, 3].filter(w => isChannelActive('TyresPressure', w)).length;
+                                const canTogglePressure = tyresPressureViewMode === 'merged' || activePressureCount >= 2;
+
+                                const activeRHCount = [0, 1].filter(w => isChannelActive('RideHeights', w)).length;
+                                const canToggleRideHeights = rideHeightViewMode === 'merged' || activeRHCount >= 2;
+
+                                const activeSlipCount = [0, 1, 2, 3].filter(w => isChannelActive('Slip Ratio', w)).length;
+                                const canToggleSlipRatio = slipRatioViewMode === 'merged' || activeSlipCount >= 2;
+
+                                return (
+                                    <>
+                                        {/* View Mode Toggle for Pedals (Throttle & Brake) */}
+                                        {(channel === 'Throttle Pos' || channel === 'Brake Pos' || channel === 'PedalsMerged') && canTogglePedals && (
+                                            <Tooltip text={`Switch to ${pedalsViewMode === 'split' ? 'Merged Throttle/Brake' : 'Split'} View`}>
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        useTelemetryStore.getState().togglePedalsViewMode();
+                                                    }}
+                                                    className="p-1 hover:bg-white/10 rounded-md transition-colors text-white/40 hover:text-white ml-1"
+                                                >
+                                                    {pedalsViewMode === 'merged' ? (
+                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" className="opacity-90">
+                                                            <path d="M2 12h4c4 0 4-7 8-7h7m0 0l-3.5-3.5M21 5l-3.5 3.5" />
+                                                            <path d="M6 12c4 0 4 7 8 7h7m0 0l-3.5-3.5M21 19l-3.5 3.5" />
+                                                        </svg>
+                                                    ) : (
+                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" className="opacity-90">
+                                                            <path d="M2 5h7c4 0 4 7 8 7h5m0 0l-3.5-3.5M22 12l-3.5 3.5" />
+                                                            <path d="M2 19h7c4 0 4-7 8-7" />
+                                                        </svg>
+                                                    )}
+                                                </button>
+                                            </Tooltip>
+                                        )}
+
+                                        {/* View Mode Toggle for Suspension */}
+                                        {((channel === 'Susp Pos' && wheelIndex === 0) || channel === 'SuspPosFront') && canToggleSuspension && (
+                                            <Tooltip text={`Switch to ${suspensionViewMode === 'split' ? '2-Panel Merged' : '4-Panel Split'} View`}>
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        useTelemetryStore.getState().toggleSuspensionViewMode();
+                                                    }}
+                                                    className="p-1 hover:bg-white/10 rounded-md transition-colors text-white/40 hover:text-white ml-1"
+                                                >
+                                                    {suspensionViewMode === 'merged' ? (
+                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" className="opacity-90">
+                                                            <path d="M2 12h4c4 0 4-7 8-7h7m0 0l-3.5-3.5M21 5l-3.5 3.5" />
+                                                            <path d="M6 12c4 0 4 7 8 7h7m0 0l-3.5-3.5M21 19l-3.5 3.5" />
+                                                        </svg>
+                                                    ) : (
+                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" className="opacity-90">
+                                                            <path d="M2 5h7c4 0 4 7 8 7h5m0 0l-3.5-3.5M22 12l-3.5 3.5" />
+                                                            <path d="M2 19h7c4 0 4-7 8-7" />
+                                                        </svg>
+                                                    )}
+                                                </button>
+                                            </Tooltip>
+                                        )}
+
+                                        {/* View Mode Toggle for 3rd Deflection */}
+                                        {(channel === 'Front3rdDeflection' || channel === 'ThirdDeflectionMerged') && canToggle3rdDeflection && (
+                                            <Tooltip text={`Switch to ${thirdDeflectionViewMode === 'split' ? 'Merged F/R' : 'Split'} View`}>
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        useTelemetryStore.getState().toggleThirdDeflectionViewMode();
+                                                    }}
+                                                    className="p-1 hover:bg-white/10 rounded-md transition-colors text-white/40 hover:text-white ml-1"
+                                                >
+                                                    {thirdDeflectionViewMode === 'merged' ? (
+                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" className="opacity-90">
+                                                            <path d="M2 12h4c4 0 4-7 8-7h7m0 0l-3.5-3.5M21 5l-3.5 3.5" />
+                                                            <path d="M6 12c4 0 4 7 8 7h7m0 0l-3.5-3.5M21 19l-3.5 3.5" />
+                                                        </svg>
+                                                    ) : (
+                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" className="opacity-90">
+                                                            <path d="M2 5h7c4 0 4 7 8 7h5m0 0l-3.5-3.5M22 12l-3.5 3.5" />
+                                                            <path d="M2 19h7c4 0 4-7 8-7" />
+                                                        </svg>
+                                                    )}
+                                                </button>
+                                            </Tooltip>
+                                        )}
+
+                                        {/* View Mode Toggle for Handling */}
+                                        {(channel === 'Yaw Rate' || channel === 'HandlingMerged') && canToggleHandling && (
+                                            <Tooltip text={`Switch to ${handlingViewMode === 'split' ? 'Merged' : 'Split'} View`}>
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        useTelemetryStore.getState().toggleHandlingViewMode();
+                                                    }}
+                                                    className="p-1 hover:bg-white/10 rounded-md transition-colors text-white/40 hover:text-white ml-1"
+                                                >
+                                                    {handlingViewMode === 'merged' ? (
+                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" className="opacity-90">
+                                                            <path d="M2 12h4c4 0 4-7 8-7h7m0 0l-3.5-3.5M21 5l-3.5 3.5" />
+                                                            <path d="M6 12c4 0 4 7 8 7h7m0 0l-3.5-3.5M21 19l-3.5 3.5" />
+                                                        </svg>
+                                                    ) : (
+                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" className="opacity-90">
+                                                            <path d="M2 5h7c4 0 4 7 8 7h5m0 0l-3.5-3.5M22 12l-3.5 3.5" />
+                                                            <path d="M2 19h7c4 0 4-7 8-7" />
+                                                        </svg>
+                                                    )}
+                                                </button>
+                                            </Tooltip>
+                                        )}
+
+                                        {/* View Mode Toggle for Tyres Pressure */}
+                                        {channel === 'TyresPressure' && (wheelIndex === undefined || wheelIndex === null || wheelIndex === 0) && canTogglePressure && (
+                                            <Tooltip text={`Switch to ${tyresPressureViewMode === 'split' ? 'Merged' : 'Split'} View`}>
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        useTelemetryStore.getState().toggleTyresPressureViewMode();
+                                                    }}
+                                                    className="p-1 hover:bg-white/10 rounded-md transition-colors text-white/40 hover:text-white ml-1"
+                                                >
+                                                    {tyresPressureViewMode === 'merged' ? (
+                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" className="opacity-90">
+                                                            <path d="M2 12h4c4 0 4-7 8-7h7m0 0l-3.5-3.5M21 5l-3.5 3.5" />
+                                                            <path d="M6 12c4 0 4 7 8 7h7m0 0l-3.5-3.5M21 19l-3.5 3.5" />
+                                                        </svg>
+                                                    ) : (
+                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" className="opacity-90">
+                                                            <path d="M2 5h7c4 0 4 7 8 7h5m0 0l-3.5-3.5M22 12l-3.5 3.5" />
+                                                            <path d="M2 19h7c4 0 4-7 8-7" />
+                                                        </svg>
+                                                    )}
+                                                </button>
+                                            </Tooltip>
+                                        )}
+
+                                        {/* View Mode Toggle for Ride Heights */}
+                                        {channel === 'RideHeights' && (wheelIndex === undefined || wheelIndex === null || wheelIndex === 0) && canToggleRideHeights && (
                                 <Tooltip text={`Switch to ${rideHeightViewMode === 'split' ? 'Merged' : 'Split'} View`}>
                                     <button
                                         onClick={(e) => {
@@ -2081,7 +2326,7 @@ export const TelemetryChart = React.memo<TelemetryChartProps>(({
                             )}
 
                             {/* View Mode Toggle for Slip Ratio */}
-                            {channel === 'Slip Ratio' && (wheelIndex === undefined || wheelIndex === null || wheelIndex === 0) && (
+                            {channel === 'Slip Ratio' && (wheelIndex === undefined || wheelIndex === null || wheelIndex === 0) && canToggleSlipRatio && (
                                 <Tooltip text={`Switch to ${slipRatioViewMode === 'split' ? 'Merged' : 'Split'} View`}>
                                     <button
                                         onClick={(e) => {
@@ -2104,6 +2349,9 @@ export const TelemetryChart = React.memo<TelemetryChartProps>(({
                                     </button>
                                 </Tooltip>
                             )}
+                                    </>
+                                );
+                            })()}
 
                             {/* Legend for Bundled Charts */}
                             {isBundled && !isCollapsed && channel !== 'PedalsMerged' && (

@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { User, Plus, Trash2, X, RefreshCw, Edit2, Check } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence, Reorder } from 'framer-motion';
+import { User, Plus, Trash2, X, RefreshCw, Edit2, Check, GripVertical } from 'lucide-react';
 import { useTelemetryStore } from '../store/telemetryStore';
 import { handleGlassMouseMove } from '../utils/glassEffect';
 
@@ -15,6 +15,7 @@ export const LoginOverlay: React.FC<LoginOverlayProps> = ({ onClose }) => {
     const createProfile = useTelemetryStore(state => state.createProfile);
     const setProfile = useTelemetryStore(state => state.setProfile);
     const updateProfile = useTelemetryStore(state => state.updateProfile);
+    const reorderProfiles = useTelemetryStore(state => state.reorderProfiles);
     const uploadAvatar = useTelemetryStore(state => state.uploadAvatar);
     const deleteProfile = useTelemetryStore(state => state.deleteProfile);
     const isLoading = useTelemetryStore(state => state.isLoading);
@@ -26,11 +27,19 @@ export const LoginOverlay: React.FC<LoginOverlayProps> = ({ onClose }) => {
     const [editValue, setEditValue] = useState('');
     const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
+    const [displayProfiles, setDisplayProfiles] = useState<any[]>(profiles || []);
+    const [isDraggingState, setIsDraggingState] = useState(false);
+    const isDraggingRef = useRef(false);
+
     useEffect(() => {
         fetchProfiles();
     }, [fetchProfiles]);
 
-
+    useEffect(() => {
+        if (!isDraggingRef.current) {
+            setDisplayProfiles(profiles || []);
+        }
+    }, [profiles]);
 
     const handleCreate = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -38,13 +47,11 @@ export const LoginOverlay: React.FC<LoginOverlayProps> = ({ onClose }) => {
         await createProfile(newName);
         setIsCreating(false);
         setNewName('');
-        // Don't auto-close if the user wants to see their new profile, 
-        // but current logic auto-selects and closes in store usually.
         if (onClose) onClose();
     };
 
     const handleSelect = async (id: string) => {
-        if (editingId) return; // Don't select while editing
+        if (editingId || isDraggingRef.current) return;
         await setProfile(id);
         if (onClose) onClose();
     };
@@ -75,7 +82,16 @@ export const LoginOverlay: React.FC<LoginOverlayProps> = ({ onClose }) => {
         setConfirmDelete(null);
     };
 
+    const handleReorder = async (newProfiles: any[]) => {
+        setDisplayProfiles(newProfiles);
+        await reorderProfiles(newProfiles.map((p: any) => p.id));
+    };
 
+    const getAvatarSrc = (url?: string | null) => {
+        if (!url) return '';
+        if (url.startsWith('http')) return url;
+        return url;
+    };
 
     return (
         <div 
@@ -132,11 +148,11 @@ export const LoginOverlay: React.FC<LoginOverlayProps> = ({ onClose }) => {
                         )}
                     </div>
 
-                    <h2 className="text-3xl font-black tracking-tighter mb-2 bg-gradient-to-br from-white via-white to-white/40 bg-clip-text text-transparent italic uppercase px-2 text-center leading-tight">
+                    <h2 className="text-3xl font-black tracking-tighter mb-1 bg-gradient-to-br from-white via-white to-white/40 bg-clip-text text-transparent italic uppercase px-2 text-center leading-tight">
                         {isCreating ? 'CREATE NEW SPACE' : 'WORKSPACE SELECTOR'}
                     </h2>
-                    <p className="text-gray-500 text-sm mb-2 text-center font-medium tracking-tight px-4 leading-normal">
-                        {isCreating ? 'Organize by track, car class, or driver identity.' : 'Switch between your specialized telemetry environments.'}
+                    <p className="text-gray-400 text-[11px] mb-4 text-center font-medium tracking-tight px-4 leading-normal">
+                        {isCreating ? 'Organize by track, car class, or driver identity.' : 'Drag to reorder • Top workspace is set as launch default.'}
                     </p>
 
                     {error && (
@@ -145,133 +161,164 @@ export const LoginOverlay: React.FC<LoginOverlayProps> = ({ onClose }) => {
                         </div>
                     )}
 
-                    {/* Profile List with improved centering (scrollbar-gutter ensures stability) */}
-                    <div className="w-full space-y-4 max-h-[360px] overflow-y-auto px-4 py-2 custom-scrollbar" style={{ scrollbarGutter: 'stable' }}>
+                    {/* Profile List */}
+                    <div className="w-full max-h-[360px] overflow-y-auto px-1 py-1 custom-scrollbar" style={{ scrollbarGutter: 'stable' }}>
                         {!isCreating ? (
-                            <>
-                                {(profiles || []).map((p: any) => (
-                                    <div
-                                        key={p.id}
-                                        onClick={() => handleSelect(p.id)}
-                                        className={`w-full group/item glass-container rounded-2xl transition-all duration-300 border cursor-pointer ${activeProfileId === p.id ? 'bg-blue-600/20 border-blue-500/40 shadow-[0_0_20px_rgba(59,130,246,0.2)]' : 'bg-white/10 border-white/10 hover:bg-white/15 hover:border-white/20'}`}
-                                        onMouseMove={handleGlassMouseMove}
-                                        style={{ '--glass-hover-scale': '1.02' } as any}
-                                    >
-                                        <div className="glass-content flex items-center p-4 gap-4">
-                                            {/* Avatar Section */}
-                                            <div className="relative group/avatar">
-                                                <div className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all overflow-hidden ${activeProfileId === p.id ? 'bg-blue-500 text-white' : 'bg-white/5 text-gray-400 group-hover/item:text-white group-hover/item:bg-white/10'}`}>
-                                                    {p.avatar_url ? (
-                                                        <img
-                                                            src={(p.avatar_url || "").startsWith('http') ? p.avatar_url : `${window.location.protocol}//${window.location.hostname}:8000${p.avatar_url}`}
-                                                            alt={p.name}
-                                                            className="w-full h-full object-cover"
-                                                            onError={(e) => {
-                                                                (e.target as HTMLImageElement).style.display = 'none';
-                                                                (e.target as HTMLImageElement).parentElement!.classList.add('bg-white/5');
-                                                            }}
-                                                        />
-                                                    ) : (
-                                                        <User size={24} />
-                                                    )}
-                                                </div>
-
-                                                {/* Upload Trigger (Only visible on hover/active) */}
-                                                <label
-                                                    onClick={(e) => e.stopPropagation()}
-                                                    className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 group-hover/avatar:opacity-100 cursor-pointer transition-opacity rounded-xl"
-                                                >
-                                                    <Plus size={16} className="text-white" />
-                                                    <input
-                                                        type="file"
-                                                        className="hidden"
-                                                        accept="image/*"
-                                                        onChange={async (e) => {
-                                                            const file = e.target.files?.[0];
-                                                            if (file) {
-                                                                const { uploadAvatar } = useTelemetryStore.getState();
-                                                                await uploadAvatar(p.id, file);
-                                                            }
-                                                        }}
-                                                    />
-                                                </label>
-                                            </div>
-
-                                            <div className="flex-1 text-left min-w-0 overflow-hidden">
-                                                {editingId === p.id ? (
-                                                    <div className="flex items-center gap-2 pr-2" onClick={e => e.stopPropagation()}>
-                                                        <input
-                                                            autoFocus
-                                                            type="text"
-                                                            value={editValue}
-                                                            onChange={e => setEditValue(e.target.value)}
-                                                            onKeyDown={e => {
-                                                                if (e.key === 'Enter') submitRename(e as any);
-                                                                if (e.key === 'Escape') setEditingId(null);
-                                                            }}
-                                                            className="flex-1 bg-white/10 border border-blue-500/50 rounded-lg px-2 py-1 text-white font-black text-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30"
-                                                        />
-                                                        <button
-                                                            onClick={submitRename}
-                                                            className="p-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-500 shadow-lg shadow-blue-600/20"
-                                                        >
-                                                            <Check size={14} />
-                                                        </button>
+                            <div className="flex flex-col gap-3">
+                                <Reorder.Group
+                                    axis="y"
+                                    values={displayProfiles}
+                                    onReorder={handleReorder}
+                                    className={`flex flex-col gap-3 w-full ${isDraggingState ? 'cursor-grabbing [&_*]:!cursor-grabbing' : ''}`}
+                                >
+                                    {(displayProfiles || []).map((p: any, idx: number) => {
+                                        return (
+                                            <Reorder.Item
+                                                key={p.id}
+                                                value={p}
+                                                transition={{ type: "spring", stiffness: 180, damping: 28, mass: 0.8 }}
+                                                onDragStart={() => {
+                                                    isDraggingRef.current = true;
+                                                    setIsDraggingState(true);
+                                                }}
+                                                onDragEnd={() => {
+                                                    setTimeout(() => {
+                                                        isDraggingRef.current = false;
+                                                        setIsDraggingState(false);
+                                                    }, 150);
+                                                }}
+                                                onClick={() => handleSelect(p.id)}
+                                                whileDrag={{ zIndex: 50, opacity: 0.95 }}
+                                                className={`w-full group/item glass-container rounded-2xl transition-colors duration-200 border select-none ${
+                                                    isDraggingState ? 'cursor-grabbing' : 'cursor-pointer'
+                                                } ${
+                                                    activeProfileId === p.id
+                                                        ? 'bg-blue-600/20 border-blue-500/40'
+                                                        : 'bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20'
+                                                }`}
+                                            >
+                                                <div className="glass-content flex items-center p-3.5 gap-3">
+                                                    {/* Drag Handle */}
+                                                    <div 
+                                                        className="cursor-grab active:cursor-grabbing text-gray-500 hover:text-white transition-colors p-1 rounded-lg hover:bg-white/10 opacity-60 group-hover/item:opacity-100 shrink-0"
+                                                        title="Drag to reorder workspace"
+                                                        onClick={(e) => e.stopPropagation()}
+                                                    >
+                                                        <GripVertical size={18} />
                                                     </div>
-                                                ) : (
-                                                    <div className="font-black tracking-tight text-lg text-white group-hover/item:translate-x-1 transition-transform truncate">
-                                                        {p.name}
-                                                    </div>
-                                                )}
-                                                <div className="text-[10px] text-gray-300 font-mono uppercase tracking-[0.05em] flex items-center gap-2 transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)]">
-                                                    {p.id === 'guest' ? (
-                                                        <span className="truncate">Initial Workspace</span>
-                                                    ) : (
-                                                        <span className="truncate">Created: {new Date(p.created_at).toLocaleDateString()}</span>
-                                                    )}
-                                                    <span className="w-1 h-1 rounded-full bg-white/20 shrink-0" />
-                                                    <span className="text-blue-400 font-bold shrink-0">{p.session_count || 0} Files</span>
-                                                </div>
-                                            </div>
 
-                                            <div className="flex items-center min-w-fit">
-                                                {!editingId && (
-                                                    <div className="flex flex-col gap-1 opacity-0 group-hover/item:opacity-100 transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] translate-x-4 group-hover/item:translate-x-0 overflow-hidden max-w-0 group-hover/item:max-w-px-100" style={{ '--max-w-target': '40px' } as any}>
-                                                        <style dangerouslySetInnerHTML={{
-                                                            __html: `
-                                                            .group-hover\\/item\\:max-w-px-100 {
-                                                                max-width: var(--max-w-target) !important;
-                                                            }
-                                                        `}} />
-                                                        <button
-                                                            onClick={(e) => handleRename(e, p.id, p.name)}
-                                                            className="p-1.5 text-gray-400 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition-all shrink-0"
-                                                            title="Rename"
+                                                    {/* Avatar Section */}
+                                                    <div className="relative group/avatar shrink-0">
+                                                        <div className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all overflow-hidden ${activeProfileId === p.id ? 'bg-blue-500 text-white' : 'bg-white/5 text-gray-400 group-hover/item:text-white group-hover/item:bg-white/10'}`}>
+                                                            {p.avatar_url ? (
+                                                                <img
+                                                                    src={getAvatarSrc(p.avatar_url)}
+                                                                    alt={p.name}
+                                                                    className="w-full h-full object-cover"
+                                                                    onError={(e) => {
+                                                                        (e.target as HTMLImageElement).style.display = 'none';
+                                                                        (e.target as HTMLImageElement).parentElement!.classList.add('bg-white/5');
+                                                                    }}
+                                                                />
+                                                            ) : (
+                                                                <User size={22} />
+                                                            )}
+                                                        </div>
+
+                                                        {/* Upload Trigger */}
+                                                        <label
+                                                            onClick={(e) => e.stopPropagation()}
+                                                            className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 group-hover/avatar:opacity-100 cursor-pointer transition-opacity rounded-xl"
                                                         >
-                                                            <Edit2 size={14} />
-                                                        </button>
-                                                        {p.id !== 'guest' && (
-                                                            <button
-                                                                onClick={(e) => handleDelete(e, p.id)}
-                                                                className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all shrink-0"
-                                                                title="Delete"
-                                                            >
-                                                                <Trash2 size={14} />
-                                                            </button>
+                                                            <Plus size={16} className="text-white" />
+                                                            <input
+                                                                type="file"
+                                                                className="hidden"
+                                                                accept="image/*"
+                                                                onChange={async (e) => {
+                                                                    const file = e.target.files?.[0];
+                                                                    if (file) {
+                                                                        const { uploadAvatar } = useTelemetryStore.getState();
+                                                                        await uploadAvatar(p.id, file);
+                                                                    }
+                                                                }}
+                                                            />
+                                                        </label>
+                                                    </div>
+
+                                                    {/* Title & Metadata */}
+                                                    <div className="flex-1 text-left min-w-0 overflow-hidden">
+                                                        {editingId === p.id ? (
+                                                            <div className="flex items-center gap-2 pr-2" onClick={e => e.stopPropagation()}>
+                                                                <input
+                                                                    autoFocus
+                                                                    type="text"
+                                                                    value={editValue}
+                                                                    onChange={e => setEditValue(e.target.value)}
+                                                                    onKeyDown={e => {
+                                                                        if (e.key === 'Enter') submitRename(e as any);
+                                                                        if (e.key === 'Escape') setEditingId(null);
+                                                                    }}
+                                                                    className="flex-1 bg-white/10 border border-blue-500/50 rounded-lg px-2 py-1 text-white font-black text-base focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                                                                />
+                                                                <button
+                                                                    onClick={submitRename}
+                                                                    className="p-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-500 shadow-lg shadow-blue-600/20"
+                                                                >
+                                                                    <Check size={14} />
+                                                                </button>
+                                                            </div>
+                                                        ) : (
+                                                            <div className="font-black tracking-tight text-base text-white group-hover/item:translate-x-0.5 transition-transform truncate">
+                                                                {p.name}
+                                                            </div>
+                                                        )}
+                                                        <div className="text-[10px] text-gray-300 font-mono uppercase tracking-[0.05em] flex items-center gap-2 transition-all duration-500 mt-0.5">
+                                                            {p.id === 'guest' ? (
+                                                                <span className="truncate">Initial Workspace</span>
+                                                            ) : (
+                                                                <span className="truncate">Created: {new Date(p.created_at).toLocaleDateString()}</span>
+                                                            )}
+                                                            <span className="w-1 h-1 rounded-full bg-white/20 shrink-0" />
+                                                            <span className="text-blue-400 font-bold shrink-0">{p.session_count || 0} Files</span>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Actions */}
+                                                    <div className="flex items-center gap-1.5 min-w-fit ml-auto">
+                                                        {!editingId && (
+                                                            <div className="flex flex-col gap-0.5 opacity-0 group-hover/item:opacity-100 transition-all duration-300">
+                                                                <button
+                                                                    onClick={(e) => handleRename(e, p.id, p.name)}
+                                                                    className="p-1 text-gray-400 hover:text-blue-400 hover:bg-blue-500/10 rounded transition-all shrink-0"
+                                                                    title="Rename"
+                                                                >
+                                                                    <Edit2 size={12} />
+                                                                </button>
+                                                                {p.id !== 'guest' && (
+                                                                    <button
+                                                                        onClick={(e) => handleDelete(e, p.id)}
+                                                                        className="p-1 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded transition-all shrink-0"
+                                                                        title="Delete"
+                                                                    >
+                                                                        <Trash2 size={12} />
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                        {activeProfileId === p.id && !editingId && (
+                                                            <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse shadow-[0_0_8px_rgba(59,130,246,1)] shrink-0 ml-1" />
                                                         )}
                                                     </div>
-                                                )}
-                                                {activeProfileId === p.id && !editingId && (
-                                                    <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse shadow-[0_0_8px_rgba(59,130,246,1)] shrink-0 ml-3" />
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
-                                ))}
+                                                </div>
+                                            </Reorder.Item>
+                                        );
+                                    })}
+                                </Reorder.Group>
 
                                 <button
                                     onClick={() => setIsCreating(true)}
-                                    className="w-full group/new glass-container rounded-2xl border border-dashed border-white/20 hover:border-blue-500/50 hover:bg-white/10 transition-all py-4"
+                                    className="w-full group/new glass-container rounded-2xl border border-dashed border-white/20 hover:border-blue-500/50 hover:bg-white/10 transition-all py-4 mt-2"
                                     onMouseMove={handleGlassMouseMove}
                                     style={{ '--glass-hover-scale': '1.02' } as any}
                                 >
@@ -280,7 +327,7 @@ export const LoginOverlay: React.FC<LoginOverlayProps> = ({ onClose }) => {
                                         <span className="text-xs font-black uppercase tracking-widest text-gray-500 group-hover/new:text-white">New Category / Environment</span>
                                     </div>
                                 </button>
-                            </>
+                            </div>
                         ) : (
                             <form onSubmit={handleCreate} className="w-full space-y-6 animate-in slide-in-from-right-4 duration-300 px-1">
                                 <div className="space-y-2">

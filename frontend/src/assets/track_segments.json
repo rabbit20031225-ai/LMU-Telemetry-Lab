@@ -1201,33 +1201,38 @@
       "segments": [
         {
           "name": "Seg 1",
-          "end": 900.0,
+          "end": 685.0,
           "badgeSide": "right"
         },
         {
           "name": "Seg 2",
-          "end": 1400.0
+          "end": 900.0,
+          "badgeSide": "right"
         },
         {
           "name": "Seg 3",
+          "end": 1400.0
+        },
+        {
+          "name": "Seg 4",
           "end": 1790.0,
           "badgeSide": "right"
         },
         {
-          "name": "Seg 4",
+          "name": "Seg 5",
           "end": 2160.0
         },
         {
-          "name": "Seg 5",
+          "name": "Seg 6",
           "end": 2855.0
         },
         {
-          "name": "Seg 6",
+          "name": "Seg 7",
           "end": 3110.0,
           "badgeSide": "right"
         },
         {
-          "name": "Seg 7",
+          "name": "Seg 8",
           "end": 3602.0
         }
       ]

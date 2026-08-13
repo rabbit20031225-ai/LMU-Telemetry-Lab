@@ -1942,7 +1942,7 @@ export const TrackMap = React.memo(({ isExpanded = false, onToggleExpand, isMini
 
                 ctx.setTransform(1, 0, 0, 1, matrix.e, matrix.f);
 
-                const radiusVal = radius;
+                const radiusVal = Math.max(0.1, Math.abs(radius));
 
                 ctx.beginPath();
                 ctx.arc(0, 0, radiusVal, 0, 2 * Math.PI);

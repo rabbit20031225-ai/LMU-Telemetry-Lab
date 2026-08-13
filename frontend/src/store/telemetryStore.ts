@@ -286,8 +286,11 @@ export interface TelemetryState {
     setupLoading: boolean;
     showSetupView: boolean;
     activeChartCategory: ChartCategory;
+    chartLayoutMode: 'preset' | 'custom';
 
     // Actions
+    setChartLayoutMode: (mode: 'preset' | 'custom') => void;
+    refreshCustomChartConfigs: () => void;
     setSpeedUnit: (unit: 'kmh' | 'mph') => void;
     setTempUnit: (unit: 'c' | 'f') => void;
     setShowSettings: (show: boolean) => void;
@@ -367,6 +370,7 @@ export interface TelemetryState {
     createProfile: (name: string) => Promise<void>;
     updateProfile: (profileId: string, name: string) => Promise<void>;
     deleteProfile: (profileId: string) => Promise<void>;
+    reorderProfiles: (profileIds: string[]) => Promise<void>;
     setPlaybackTime: (time: number) => void;
     uploadAvatar: (profileId: string, file: File) => Promise<void>;
     syncReferenceIndex: () => void;
@@ -419,8 +423,10 @@ export const CATEGORY_CHART_CONFIGS: Record<ChartCategory, ChartConfig[]> = {
         { id: 'Susp Pos', alias: 'RL Susp', color: '#3b82f6', visible: true, order: 2, height: 120, unit: 'mm', wheelIndex: 2 },
         { id: 'Susp Pos', alias: 'RR Susp', color: '#ef4444', visible: true, order: 3, height: 120, unit: 'mm', wheelIndex: 3 },
         { id: 'RideHeights', alias: 'Ride Heights (F/R)', color: '#00aaff', visible: true, order: 4, height: 160, unit: 'mm' },
-        { id: 'Front3rdDeflection', alias: 'Front 3rd Deflection', color: '#22d3ee', visible: true, order: 5, height: 100, unit: 'mm' },
-        { id: 'Rear3rdDeflection', alias: 'Rear 3rd Deflection', color: '#fb923c', visible: true, order: 6, height: 100, unit: 'mm' },
+        { id: 'Pitch', alias: 'Pitch Angle (Calc)', color: '#a855f7', visible: true, order: 5, height: 120, unit: 'deg' },
+        { id: 'Roll', alias: 'Roll Angle (Calc)', color: '#ec4899', visible: true, order: 6, height: 120, unit: 'deg' },
+        { id: 'Front3rdDeflection', alias: 'Front 3rd Deflection', color: '#22d3ee', visible: true, order: 7, height: 100, unit: 'mm' },
+        { id: 'Rear3rdDeflection', alias: 'Rear 3rd Deflection', color: '#fb923c', visible: true, order: 8, height: 100, unit: 'mm' },
     ],
     Handling: [
         { id: 'Slip Ratio', alias: 'Slip Ratio (All Wheels)', color: '#00ff88', visible: true, order: 0, height: 140, unit: '%' },
@@ -643,6 +649,29 @@ export const getCategoryTemplateConfigs = (category: ChartCategory, state: {
     return configs;
 };
 
+export const getAllMasterChartConfigs = (state: TelemetryState): ChartConfig[] => {
+    const list: ChartConfig[] = [];
+    const seen = new Set<string>();
+
+    const addConfig = (c: ChartConfig) => {
+        const key = `${c.id}-${c.wheelIndex ?? 'all'}`;
+        if (!seen.has(key)) {
+            seen.add(key);
+            list.push(c);
+        }
+    };
+
+    (Object.keys(CATEGORY_CHART_CONFIGS) as ChartCategory[]).forEach(cat => {
+        const templateConfigs = getCategoryTemplateConfigs(cat, state);
+        templateConfigs.forEach(addConfig);
+    });
+
+    addConfig({ id: 'Pitch', alias: 'Pitch Angle (Calc)', color: '#a855f7', visible: true, order: 6.5, height: 120, unit: 'deg' });
+    addConfig({ id: 'Roll', alias: 'Roll Angle (Calc)', color: '#ec4899', visible: true, order: 6.6, height: 120, unit: 'deg' });
+
+    return list;
+};
+
 export const useTelemetryStore = create<TelemetryState>((set, get) => ({
     sessions: [],
     currentSessionId: null,
@@ -689,7 +718,40 @@ export const useTelemetryStore = create<TelemetryState>((set, get) => ({
     invertSuspensionTravel: localStorage.getItem('invert_suspension_travel') === 'true',
     suspensionTravelMode: (localStorage.getItem('suspension_travel_mode') as 'raw' | 'relative') || 'raw',
     showSettings: false,
-    chartConfigs: DEFAULT_CHARTS,
+    chartConfigs: (() => {
+        const savedMode = localStorage.getItem('chart_layout_mode');
+        if (savedMode !== 'custom') return DEFAULT_CHARTS;
+
+        // Reconstruct master list using the same view-mode settings from localStorage
+        // (mirrors getAllMasterChartConfigs but without a full state object)
+        const fakeState = {
+            suspensionViewMode: (localStorage.getItem('suspension_view_mode') as 'raw' | 'relative') || 'raw',
+            thirdDeflectionViewMode: (localStorage.getItem('third_deflection_view_mode') as 'split' | 'merged') || 'split',
+            handlingViewMode: (localStorage.getItem('handling_view_mode') as 'split' | 'merged') || 'split',
+            tyresPressureViewMode: (localStorage.getItem('tyres_pressure_view_mode') as 'split' | 'merged') || 'split',
+            rideHeightViewMode: (localStorage.getItem('ride_height_view_mode') as 'split' | 'merged') || 'split',
+        } as any;
+
+        const list: ChartConfig[] = [];
+        const seen = new Set<string>();
+        const addConfig = (c: ChartConfig) => {
+            const key = `${c.id}-${c.wheelIndex ?? 'all'}`;
+            if (!seen.has(key)) { seen.add(key); list.push(c); }
+        };
+
+        (Object.keys(CATEGORY_CHART_CONFIGS) as ChartCategory[]).forEach(cat => {
+            const templateConfigs = getCategoryTemplateConfigs(cat, fakeState);
+            templateConfigs.forEach(addConfig);
+        });
+        addConfig({ id: 'Pitch', alias: 'Pitch Angle (Calc)', color: '#a855f7', visible: true, order: 6.5, height: 120, unit: 'deg' });
+        addConfig({ id: 'Roll', alias: 'Roll Angle (Calc)', color: '#ec4899', visible: true, order: 6.6, height: 120, unit: 'deg' });
+
+        const custom = (() => { try { return JSON.parse(localStorage.getItem('custom_chart_settings') || '{}'); } catch { return {}; } })();
+        return list.map((c, i) => {
+            const key = `${c.id}-${c.wheelIndex ?? 'all'}`;
+            return custom[key] ? { ...c, ...custom[key] } : { ...c, order: c.order ?? i };
+        }).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    })(),
     chartPresets: [
         ...BUILT_IN_PRESETS,
         ...(JSON.parse(localStorage.getItem('chart_presets') || '[]') as ChartPreset[]),
@@ -759,6 +821,31 @@ export const useTelemetryStore = create<TelemetryState>((set, get) => ({
     setupLoading: false,
     showSetupView: false,
     activeChartCategory: 'Driver',
+    chartLayoutMode: (localStorage.getItem('chart_layout_mode') as 'preset' | 'custom') || 'preset',
+
+    setChartLayoutMode: (mode) => {
+        localStorage.setItem('chart_layout_mode', mode);
+        set({ chartLayoutMode: mode });
+        if (mode === 'custom') {
+            get().refreshCustomChartConfigs();
+        } else {
+            get().setActiveChartCategory(get().activeChartCategory);
+        }
+    },
+    refreshCustomChartConfigs: () => {
+        const state = get();
+        const master = getAllMasterChartConfigs(state);
+        const custom = JSON.parse(localStorage.getItem('custom_chart_settings') || '{}');
+        const merged = master.map((c, i) => {
+            const key = `${c.id}-${c.wheelIndex ?? 'all'}`;
+            if (custom[key]) {
+                return { ...c, ...custom[key] };
+            }
+            return { ...c, order: c.order ?? i };
+        }).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
+        set({ chartConfigs: merged });
+    },
 
     setShowCarSelection: (val) => set({ showCarSelection: val }),
     setCustomCarMapping: (rawCarName, modelName) => {
@@ -1103,21 +1190,26 @@ export const useTelemetryStore = create<TelemetryState>((set, get) => ({
     setActiveChartCategory: (category) => {
         set({ activeChartCategory: category });
 
-        const getCustomSettings = () => {
-            try { return JSON.parse(localStorage.getItem('custom_chart_settings') || '{}'); }
+        if (get().chartLayoutMode === 'custom') {
+            get().refreshCustomChartConfigs();
+            return;
+        }
+
+        const getPresetSettings = () => {
+            try { return JSON.parse(localStorage.getItem('preset_chart_settings') || '{}'); }
             catch { return {}; }
         };
-        const custom = getCustomSettings();
-        const mergeWithCustom = (configs: ChartConfig[]) => {
+        const preset = getPresetSettings();
+        const mergeWithPreset = (configs: ChartConfig[]) => {
             return configs.map(c => {
                 const key = `${c.id}-${c.wheelIndex ?? 'all'}`;
-                if (custom[key]) return { ...c, ...custom[key] };
+                if (preset[key]) return { ...c, ...preset[key] };
                 return c;
             });
         };
 
         const configs = getCategoryTemplateConfigs(category, get());
-        set({ chartConfigs: mergeWithCustom(configs) });
+        set({ chartConfigs: mergeWithPreset(configs) });
     },
     toggleSuspensionViewMode: () => {
         const currentMode = get().suspensionViewMode;
@@ -1545,18 +1637,19 @@ export const useTelemetryStore = create<TelemetryState>((set, get) => ({
     },
 
     updateChartConfig: (id, updates, wheelIndex) => {
-        const { chartConfigs } = get();
-        const newConfigs = chartConfigs.map(c =>
-            (c.id === id && c.wheelIndex === wheelIndex) ? { ...c, ...updates } : c
-        );
+        const { chartConfigs, chartLayoutMode } = get();
+        const storageKey = chartLayoutMode === 'custom' ? 'custom_chart_settings' : 'preset_chart_settings';
 
-        // Save to persistent custom settings
-        const custom = JSON.parse(localStorage.getItem('custom_chart_settings') || '{}');
+        const saved = JSON.parse(localStorage.getItem(storageKey) || '{}');
         const key = `${id}-${wheelIndex ?? 'all'}`;
-        custom[key] = { ...custom[key], ...updates };
-        localStorage.setItem('custom_chart_settings', JSON.stringify(custom));
+        saved[key] = { ...saved[key], ...updates };
+        localStorage.setItem(storageKey, JSON.stringify(saved));
 
-        set({ chartConfigs: newConfigs });
+        if (chartLayoutMode === 'custom') {
+            get().refreshCustomChartConfigs();
+        } else {
+            get().setActiveChartCategory(get().activeChartCategory);
+        }
     },
 
     saveChartPreset: (name) => {
@@ -2178,6 +2271,15 @@ export const useTelemetryStore = create<TelemetryState>((set, get) => ({
                 const fallback = newProfiles[0]?.id || 'guest';
                 await get().setProfile(fallback);
             }
+        } catch (err) {
+            set({ error: (err as Error).message });
+        }
+    },
+
+    reorderProfiles: async (profileIds: string[]) => {
+        try {
+            const data = await apiClient.reorderProfiles(profileIds);
+            set({ profiles: data.profiles });
         } catch (err) {
             set({ error: (err as Error).message });
         }

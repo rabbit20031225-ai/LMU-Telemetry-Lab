@@ -1,5 +1,89 @@
 # PROJECT WALKTHROUGH HISTORY
 
+## 2026-08-11 | Workspace Selector 拖曳排序與預設開啟 Workspace 設定 (Workspace Reordering & Launch Default)
+
+本次更新為 **WORKSPACE SELECTOR** 增加了直覺的 Drag & Drop 拖曳排序功能，並自動將位於最上方的 Workspace 設為 App 啟動時的預設 Workspace。
+
+### 變更內容
+- **Workspace Selector 操作按鈕改為上下垂直排列 (Vertical Action Buttons)**：
+  - 在 [LoginOverlay.tsx](file:///c:/Users/rabbit/Desktop/antigravity%20project/DuckDB_investigation/frontend/src/components/LoginOverlay.tsx) 將 Workspace 的 Rename (編輯) 與 Delete (刪除) 按鈕由原本的左右水平排列改為 `flex-col` 上下垂直排列，更節省橫向空間且介面更加精緻。
+- **自定義頭像網址修復 (Custom Avatar URL Port Fix)**：
+  - 修復 [LoginOverlay.tsx](file:///c:/Users/rabbit/Desktop/antigravity%20project/DuckDB_investigation/frontend/src/components/LoginOverlay.tsx) 與 [App.tsx](file:///c:/Users/rabbit/Desktop/antigravity%20project/DuckDB_investigation/frontend/src/App.tsx) 中硬編碼 `:8000` 端口導致 8001 服務下頭像無法顯示的問題，改為相對路徑讓 Vite Proxy / 靜態 Mount 正確解析。
+- **置頂 Workspace 自動設為預設 (Top Workspace as Launch Default)**：
+  - 被拖曳或移動至最上方（Index 0）的 Workspace 自動獲得 `⭐ Default` 標籤並更新至 `profiles.json`（`is_default = true`），App 啟動時會預設載入最上方的 Workspace。
+
+---
+
+## 2026-08-09 | v1.5.2 圖表排序選單、動態色彩勾選、獨立/合併模式動態切換與右鍵拖曳平移 (v1.5.2 Chart UI & Drag Panning)
+
+本次更新為遙測圖表系統與 Settings 設定介面帶來了一系列精細的 UI/UX 優化與互動升級。包括全新的動態色彩勾選單、Settings 框型風格統一、圖表獨立與合併模式（Merged / Split）的選單動態對應、智慧隱藏合併按鈕，以及支援右鍵拖曳平移（Right-Click Drag Panning）放大視窗等功能。
+
+### 變更內容
+- **圖表排序選單與 Settings 介面 UI 質感升級 (Settings UI & Custom Checklist Polish)**：
+  - **選單預設狀態**：設定彈窗 (`SettingsOverlay.tsx`) 中的圖表勾選單與排序面板改為預設收合狀態，點擊標題列即可靈活展開/收合。
+  - **去除冗餘框體**：移除舊有 `Custom Stack (Drag to Reorder)` 獨立外框與多餘標題，使 Settings 內所有框體樣式與內邊距維持高度一致。
+  - **動態頻道色彩勾選**：勾選單項目全面移除硬編碼 Emoji 圖示（如 🏎️ 等），並在勾選後自動改為顯示該遙測圖表通道專屬的亮色邊框與半透明發光背景。
+  - **縮放特效一體化**：統一 Settings 中所有功能框的 Hover 縮放與邊框發光特效，解決部分框體效果太過突兀的問題。
+- **Custom 模式頂導航列重構與動態選單 (Custom Mode Header & Dynamic View Mode Menu)**：
+  - **Custom 模式簡化**：選擇 `Custom (All-in-One)` 圖表佈局時，自動隱藏中間圖表區最上方的 `DRIVER, TYRES, DYNAMICS...` 分類切換框，還原乾淨流暢的自訂單一 Stack 視野。
+  - **勾選單動態回應 View Mode**：
+    - 當圖表切換至 **Merged (合併模式)**（如 Throttle / Brake 合併）時，勾選單動態隱藏個別的 `Throttle` 與 `Brake`，改為僅顯示 `Throttle / Brake` 合併通道。
+    - 當圖表切換至 **Split (拆分模式)** 時，勾選單自動切換回顯示個別 `Throttle` 與 `Brake` 通道。
+- **智慧隱藏 Merge 合併按鈕 (Smart Merge Button Display)**：
+  - **`isChannelActive` 雙重動態檢驗**：在 `TelemetryChart.tsx` 導入雙重檢查機制，同時檢驗圖表是否處於 `visible === true` 且當前遙測數據 (`telemetryData`) 中確實包含該頻道資料。
+  - **單一頻道自動隱藏**：在拆分模式下，若畫面上僅勾選或僅存在單一頻道（例如僅有 Throttle，無 Brake 數據或 Brake 未勾選），Throttle 圖表卡片標題列上的 `🔀` (Merge) 按鈕將自動隱藏；唯有在對應群組的 2 個（或以上）頻道均可正常顯示時才提供合併功能。
+- **新增 Pitch Angle (Calc) 與 Roll Angle (Calc) 計算圖表與精度優化**：
+  - **Dynamics 分類擴充**：於 `Dynamics` 分類與 Master 清單中加入 `Pitch Angle (Calc)` (`#a855f7` 紫色, 單位 `deg`) 與 `Roll Angle (Calc)` (`#ec4899` 粉紅, 單位 `deg`)，帶有 `(Calc)` 計算標註。
+  - **三角幾何角度算式**：
+    - $\text{Pitch (deg)} = \arctan\left(\frac{RH_{\text{rear}} - RH_{\text{front}}}{2750\text{ mm}}\right) \times \frac{180}{\pi}$
+    - $\text{Roll (deg)} = \arctan\left(\frac{RH_{\text{left}} - RH_{\text{right}}}{1650\text{ mm}}\right) \times \frac{180}{\pi}$
+  - **精度優化**：右上角數值欄統一採用 **2 位小數 (`toFixed(2)`)** 格式化（如 `+0.15°`、`-0.82°`），解決角度數值較小不易閱讀的問題。
+  - **雙圈實時對比**：完全支援主圈與 Reference 參考圈的 Pitch / Roll 實時幾何運算與曲線疊加對比。
+- **Minimap 賽道軌跡還原 (Minimap Telemetry Trace & Scale Protection)**：
+  - **軌跡還原**：在未開啟微區段分析 (`showMiniSectors = false`) 時，Minimap 恢復渲染清晰標準的油門（綠）/煞車（紅）/滑行（白）遙測線條。
+  - **防護機制**：確保在地圖縮放與比例轉換時游標與線條半徑具備安全下限，維護地圖畫面精準度與輪廓清晰。
+- **右鍵拖曳平移放大視窗 (Right-Click Drag Panning)**：
+  - **右鍵平移功能 (Right-Click Pan)**：在 [TelemetryChart.tsx](file:///c:/Users/rabbit/Desktop/antigravity%20project/DuckDB_investigation/frontend/src/components/TelemetryChart.tsx) 導入右鍵拖曳平移機制。當使用者使用左鍵拉出放大區間 (`zoomRange !== null`) 後，按住滑鼠**右鍵左右拖曳**，即可流暢滑動（前移/後移）當前放大的檢視視窗。
+  - **全圖表實時同步**：平移動作會在全域 Store (`setZoomRange`) 中同步，所有已開啟的遙測圖表將完美聯動平移。
+  - **邊界保護與右鍵選單攔截**：平移邊界自動限制在單圈 `[0, Max]` 範圍內，並攔截瀏覽器原生右鍵選單 (`contextmenu`)，確保右鍵拖曳不會彈出功能選單干擾操作。
+- **頁面重新整理 Custom 模式圖表載入修復 (Custom Chart Layout Page Reload Fix)**：
+  - **根因修復**：修正切換至 `Custom` 模式後，重新整理網頁時 `telemetryStore.ts` 的 `chartConfigs` 初始值預設為 `DEFAULT_CHARTS`（Driver preset 的 7 個圖表）導致只顯示 Driver 圖表的問題。
+  - **IIFE 初始化**：在 `telemetryStore.ts` 建立時加入 IIFE 計算，若 `chartLayoutMode === 'custom'` 則自動重建完整的 Master 圖表清單並與 `localStorage` 中的 `custom_chart_settings` 進行合併，確保重新整理後無需重新切換模式即可完整載入所有自訂圖表。
+
+---
+
+## 2026-08-08 | v1.5.1 Settings 設定內建「預設 / 自訂圖表」切換與全域圖表排序
+
+本次更新為 v1.5.1 實作了 Settings 設定內建的「自訂圖表佈局模式 (Custom Chart Stack Mode)」。使用者可在設定彈窗中自由於 `Preset Tabs (預設分頁)` 與 `Custom All-in-One (自訂全單清單)` 間切換，並可以在 Custom 模式下自由勾選要顯示的圖表通道與進行全域垂直拖曳排序。
+
+### 變更內容
+- **Settings 設定內建佈局切換與全單自訂 (Settings Custom Chart Management)**：
+  - 在 [SettingsOverlay.tsx](file:///c:/Users/rabbit/Desktop/antigravity%20project/DuckDB_investigation/frontend/src/components/SettingsOverlay.tsx) 的 **Chart Layout & Colors** 區塊新增 `Preset Tabs` 與 `Custom (All-in-One)` 滑動切換膠囊。
+  - 當處於 `Custom` 模式時，顯示跨全類別的所有遙測圖表 Master 清單，支援勾選/取消勾選 (`visible`)、拖曳 (`drag and drop`) 調整顯示順序，以及設定線條顏色。
+- **全域 Store 與持久化擴充 (`telemetryStore.ts`)**：
+  - 在 [telemetryStore.ts](file:///c:/Users/rabbit/Desktop/antigravity%20project/DuckDB_investigation/frontend/src/store/telemetryStore.ts) 中新增 `chartLayoutMode` 狀態（`'preset'` | `'custom'`），自動寫入 `localStorage.getItem('chart_layout_mode')` 保存。
+  - 新增 `getAllMasterChartConfigs` 工具與 `refreshCustomChartConfigs` 行為，確保切換至自訂模式時主分析面板能載入完整自訂排序圖表 Stack。
+- **主視圖頂導航欄動態回應 (`App.tsx`)**：
+  - 在 [App.tsx](file:///c:/Users/rabbit/Desktop/antigravity%20project/DuckDB_investigation/frontend/src/App.tsx) 中新增 `CUSTOM STACK` 藍色發光狀態標籤。點擊任何類別分頁按鈕時，會自動切換回 `Preset` 模式並開起對應 Tab。
+
+---
+
+## 2026-08-08 | 賽道地圖 Canvas 全螢幕渲染負半徑修復、CarSetup 缺失診斷與社群回覆整理
+
+本次更新修正了地圖全螢幕與縮放過渡時 Canvas `arc()` 負半徑導致的系統崩潰（SYSTEM FAULT），診斷了 DuckDB 遙測檔案缺少 `CarSetup` 的根本原因，並分析了動態 GPS Telemetry 地圖平滑與 TinyPedal 賽道軌跡出現雜點（Blob）的成因。
+
+### 變更內容
+- **Canvas `arc()` 負半徑渲染崩潰修復 (CanvasRenderingContext2D Negative Radius Fix)**：
+  - **問題診斷**：在載入 Daytona 等特長賽道並切換全螢幕時，縮放矩陣係數 `effK` 於過渡影格中可能轉為負值，導致傳給 Canvas `ctx.arc(cpx, cpy, radius / effK, ...)` 的半徑變成負數（如 `-0.0125779`），觸發 HTML5 Canvas `DOMException` 並拋出 `SYSTEM FAULT` 畫面。
+  - **修復方案**：在 [TrackMap.tsx](file:///c:/Users/rabbit/Desktop/antigravity%20project/DuckDB_investigation/frontend/src/components/TrackMap.tsx) 中對所有傳入 `ctx.arc` 的半徑與縮放係數統一封裝 `Math.max(0.1, Math.abs(...))` 與 `safeEffK` 安全防護，100% 杜絕負數半徑與零除異常。
+- **DuckDB `CarSetup` Metadata 缺失深度排查 (CarSetup Metadata Inspection)**：
+  - **欄位比對**：檢查網友提供的 `Circuit de Spa-Francorchamps_P_2026-07-25T20_15_28Z.duckdb`，確認其 `metadata` 表中缺少 `CarSetup` key（僅有 11 筆，正常為 12 筆）。
+  - **猜測驗證**：排除了 Coach Dave 加密鎖定與遊戲語系（法文 `Légèrement nuageux`）影響鍵名（Key）的假設，確認 Key 名稱屬 LMU 內部固定 C++ 常數。根本原因為玩家未進 Garage 整備區即下場跑圈，或中途按快捷鍵啟動錄製，導致 LMU 遙測引擎未寫入 Setup JSON。
+- **TinyPedal 與 LMU Telemetry Lab 賽道地圖繪製對比 (Track Map Smooth & Blob Clarification)**：
+  - 釐清我們的 App 是直接自 DuckDB `GPS Latitude / Longitude` 動態繪製行車軌跡並做平滑處理。當原始遙測包含打滑（Spin）或進出 Pita 區的座標擾動時，可能繪出局部異樣軌跡。協助整理英文說明回覆社群成員 Andi。
+
+---
+
 ## 2026-07-06 | 全新 mini sector 微區段分析與 G-Force Radar 實時雷達圖重磅上線 (v1.5.0)
 
 本次更新重磅推出了「mini sector 微區段分析系統」與「G-Force Radar 實時雷達圖」，全面升級了遙測系統的核心分析能力。導入了起點時間對齊播放、左右導航按鍵、uPlot 圖表 Y 軸自適應伸縮、雙擊區段重置、Live Telemetry 對照 Theoretical Best 以及 G-Force 實時雷達圖與拖尾渲染等功能。
